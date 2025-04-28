@@ -1,0 +1,594 @@
+#! /usr/bin/env python
+#
+# Design a supersonic nozzle using Method of Characteristics 
+# for CPG, inviscid, steady, isentropic, irrotational flow
+# 2D or axisymmetric
+#
+# Author: Eric Sandall
+# Last Modified: 9 July 2022
+# Versions: Python 3.7.6
+#
+
+import os, sys
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.optimize as opt
+from math import pi, sqrt, tan, atan, asin
+
+
+############################
+#        MoC Solver        #
+############################
+
+class MOC_Nozzle:
+    '''
+Class for generating 2D or axisymmetric minimum length nozzle contours 
+using the method of characteristics. Basic assumptions include:
+    1. Steady, isentropic, irrotational flow
+    2. Calorically perfect
+    3. Initial expansion region is a sharp corner
+    4. Sonic line is a straight line at nozzle throat
+    5. Throat area A* is unity
+
+Outputs: Data file and optional plot with contour points for upper nozzle contour
+inputs:  var      type      default     details
+         --------------------------------------
+         dim      [str]     'axi'       solver type: '2d' or 'axi'
+         gamma    [float]   1.4         specific heat ratio
+         M        [float]   2           desired Mach number at nozzle exit
+         n        [int]     5           number of characteristics to approximate
+         outdir   [str]     'output'    path to output directory
+         iplot    [int]     0           flag to save plot contour, 0:no plot, 1:save plot, 
+                                                                   2:save & show plot
+
+General usage (from python)
+
+  from MOC_Nozzle import MOC_Nozzle as MOC
+  moc = MOC(**kwargs)  #kwargs are listed in inputs above
+
+General usage (from linux terminal):
+
+  python MOC_Nozzle.py [args]
+        or
+  ./MOC_Nozzle.py [args]
+
+  e.g. python MOC_Nozzle.py -h
+  e.g. ./MOC_Nozzle.py -G 1.2 --mach=1.5,2.0,2.5 -n 10 --iplot=2
+
+  [args]
+    -d, --default   :   run with default parameters
+    -D, --dim       :   2d or axi [str]
+    -G, --gamma     :   specific heat ratio [single number or array in Python syntax]
+    -h, --help      :   display help
+    -I, --iplot     :   flag to save/show contour plots [0:no, 1:save, 2:save & show]
+    -M, --mach      :   Mach number at nozzle exit [single number or array in Python syntax]
+    -N, --n         :   number of characteristics to approximate solution [integer]
+    -O, --outdir    :   relative path to save directory for output files/plots [str]
+    -t, --test      :   run test cases
+    '''
+
+    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=0):
+        # Check inputs are valid
+        assert dim.upper() in ['2D','AXI'], f'"dim" [str] expects "2d" or "axi", got {dim}'
+        assert isinstance(gamma, (float, int)), '"gamma" [float] expects a number, got {gamma}'
+        assert isinstance(M, (float, int)), '"M" [float] expects a number, got {M}'
+        assert isinstance(n, int), '"n" [int] expects an integer, got {n}'
+        assert isinstance(outdir, str), '"outdir" [str] expects a relative or absolute path string, got {outdir}'
+        assert iplot == 0 or iplot == 1 or iplot == 2, '"iplot" [int] must be 0, 1, or 2'
+
+        self.dim = dim.upper()
+        self.gamma = float(gamma)
+        self.Me = float(M)
+        self.n = n
+        self.outdir = outdir
+        self.iplot = iplot
+        self.fname_base = f'MOC_{self.dim.lower()}_G{self.gamma:.4f}_M{self.Me:.4f}_n{self.n:04}'
+        
+        #x,y-coordinate for start of nozzle expansion
+        #solving for top contour only
+        #mirror for full 2D or rotate for full axi solution
+        self.A0 = 1.0
+        self.x0 = 0.0
+        if '2D' in self.dim:
+            self.y0 = self.A0/2.0
+        elif 'AXI' in self.dim:
+            self.y0 = sqrt(1.0/pi)
+
+        # Initialize arrays
+        self.x=np.zeros([self.n,self.n])        # x coordinates
+        self.y=np.zeros([self.n,self.n])        # y/r coordinates
+        self.M=np.zeros([self.n,self.n])        # Mach number
+        self.Mu=np.zeros([self.n,self.n])       # Mach angle
+        self.theta=np.zeros([self.n,self.n])    # angle relative to horizontal
+        self.Nu = np.zeros([self.n,self.n])     # Prandtl-Meyer function
+        
+        #Constant along right running C- characteristic lines
+        self.Km = np.zeros([self.n,self.n])     # K- values: theta + nu
+        #Constant along left running C+ characteristic lines
+        self.Kp = np.zeros([self.n,self.n])     # K+ values: theta - nu
+        
+        self.nuMax = self.PM_M2nu(self.gamma, self.Me) # Prandtl-Meyer function for design Mach #
+        self.thetaMax = self.nuMax/2.0 # Maximum angle at expansion corner of nozzle
+        
+        # Initialize wall point arrays
+        self.xwall = np.zeros([self.n+1])
+        self.ywall = np.zeros([self.n+1])
+        self.thetaw = np.zeros([self.n+1])
+        self.Nuw = np.zeros([self.n+1])
+        self.Muw = np.zeros([self.n+1])
+        self.Mw = np.zeros([self.n+1])
+        self.xwall[0] = self.x0
+        self.ywall[0] = self.y0
+        self.thetaw[0] = self.thetaMax
+        self.Nuw[0] = self.nuMax
+        self.Muw[0] = self.PM_nu2mu(self.gamma,self.Nuw[0])
+        self.Mw[0] = self.PM_nu2M(self.gamma,self.Nuw[0])
+
+        # MOC Solver
+        if '2D' in self.dim:
+            self.MOC_2D()
+        elif 'AXI' in self.dim:
+            self.MOC_axi()
+
+        # Generate output data file
+        if not os.path.exists(outdir):
+            os.makedirs(outdir)
+        fname = os.path.join(outdir,self.fname_base + '.txt')
+        np.savetxt(fname, self.outlet_geom, delimiter='\t', header='x\ty')
+
+        # Plot
+        if self.iplot > 0:
+            self.plot_nozzle()
+
+    def MOC_2D(self):
+        '''Method of Characteristics solver for 2D nozzle'''
+
+        #Flow data for characteristic lines (1st iteration)
+        self.theta[:,0] = (np.arange(self.thetaMax/self.n, self.thetaMax +
+                           0.5*self.thetaMax/self.n, self.thetaMax/self.n))
+        self.Nu[:,0] = (np.arange(self.thetaMax/self.n, self.thetaMax +
+                        0.5*self.thetaMax/self.n, self.thetaMax/self.n))
+        for i in range(self.n):
+            self.M[i,0] = self.PM_nu2M(self.gamma, self.theta[i,0])
+            self.Km[i,0] = self.theta[i,0] + self.Nu[i,0]
+            self.Kp[i,0] = self.theta[i,0] - self.Nu[i,0]
+            self.Mu[i,0] = asin(1.0/self.M[i,0])*180.0/pi
+        
+        #Flow data for characteristic lines (2:end iterations)
+        for j in range(1,self.n):
+            for i in range(self.n-j):
+                if i == 0:
+                    self.theta[i,j] = 0.0
+                    self.Km[i,j] = self.Km[i+1,j-1]
+                    self.Kp[i,j] = 2.0*self.theta[i,j] - self.Km[i,j]
+                    self.Nu[i,j] = 0.5*(self.Km[i,j] - self.Kp[i,j])
+                    self.Mu[i,j] = self.PM_nu2mu(self.gamma,self.Nu[i,j])
+                else:
+                    self.Km[i,j] = self.Km[i+1,j-1]
+                    self.Kp[i,j] = self.Kp[i-1,j]
+                    self.theta[i,j] = 0.5*(self.Km[i,j]+self.Kp[i,j])
+                    self.Nu[i,j] = 0.5*(self.Km[i,j]-self.Kp[i,j])
+                    self.Mu[i,j] = self.PM_nu2mu(self.gamma,self.Nu[i,j])
+        
+        #Characteristic line coordinates (first C+ line)
+        self.y[0,0] = 0.0
+        self.x[0,0] = self.x0 - self.y0/(tan((self.theta[0,0]-self.Mu[0,0])*pi/180.0))
+        for i in range(1,self.n):
+            mp = tan((self.theta[i-1,0]+self.Mu[i-1,0])*pi/180.0)
+            mm = tan((self.theta[i,0]-self.Mu[i,0])*pi/180.0)
+            yi=(self.y[i-1,0]-mp*(self.y0/mm-self.x0+self.x[i-1,0]))/(1-mp/mm)
+            xi=(yi-self.y0)/mm+self.x0
+            self.x[i,0]=xi
+            self.y[i,0]=yi
+    
+        #Characteristic line coordinates (remaining)
+        for j in range(1,self.n+1):
+            for i in range(0,self.n-j):
+                if i==0: #point is on symmetry axis (y=0)
+                    yi=0
+                    mm=tan((self.theta[i+1,j-1]-self.Mu[i+1,j-1])*pi/180.0)
+                    xi=(yi-self.y[i+1,j-1]+mm*self.x[i+1,j-1])/mm
+                    self.x[i,j]=xi
+                    self.y[i,j]=yi
+                else:
+                    mp=tan((self.theta[i-1,j]+self.Mu[i-1,j])*pi/180.0)
+                    mm=tan((self.theta[i+1,j-1]-self.Mu[i+1,j-1])*pi/180)
+                    yi=((mm*(-self.y[i-1,j]/mp+self.x[i-1,j]-self.x[i+1,j-1])+
+                         self.y[i+1,j-1])/(1-mm/mp))
+                    xi=(yi-self.y[i-1,j])/mp+self.x[i-1,j]
+                    self.x[i,j]=xi
+                    self.y[i,j]=yi
+
+        #Wall data
+        self.wall_2D()
+
+    def MOC_axi(self):
+        '''Method of Characteristics solver for axisymmetric nozzle'''
+
+        #Initial data at entrance point of throat
+        self.thetaL = np.zeros(self.n)
+        self.thetaL[:] = np.arange(self.thetaMax/self.n,
+              self.thetaMax+self.thetaMax/self.n/2.0,self.thetaMax/self.n)
+        self.ML = np.ones(self.n)
+        self.nuL = np.zeros(self.n)
+        self.muL = np.zeros(self.n)
+        self.KmL = np.zeros(self.n)
+        self.KpL = np.zeros(self.n)
+        for i in range(self.n):
+            self.nuL[i] = self.thetaL[i]
+            self.muL[i] = self.PM_nu2mu(self.gamma,self.nuL[i])
+            self.KmL[i] = self.thetaL[i] + self.nuL[i]
+            self.KpL[i] = self.thetaL[i] - self.nuL[i]
+    
+        #Flow data for characteristic lines (1st iteration)
+        for i in range(self.n):
+            if i == 0:
+                self.theta[i,0] = 0.0
+                self.y[i,0] = 0.0
+                self.x[i,0] = ((self.y[i,0]-self.y0)/tan((self.thetaL[i]-
+                           self.muL[i])*pi/180.0) + self.x0)
+                self.Km[i,0] = (1.0/(sqrt(self.ML[i]**2.0 - 1.0) -
+                          1.0/tan(self.thetaL[i]*pi/180.0))/self.y0*(self.y[i,0]-self.y0)+
+                          self.KmL[i])
+                self.Nu[i,0] = self.Km[i,0] - self.theta[i,0]
+                self.Kp[i,0] = self.theta[i,0] - self.Nu[i,0]
+                self.Mu[i,0] = self.PM_nu2mu(self.gamma,self.Nu[i,0])
+                self.M[i,0] = self.PM_nu2M(self.gamma,self.Nu[i,0])
+            else:
+                self.x[i,0] = ((tan((self.thetaL[i]-self.muL[i])*pi/180.0)*self.x0 -
+                     tan((self.theta[i-1,0]+self.Mu[i-1,0])*pi/180.0)*self.x[i-1,0]+
+                     self.y[i-1,0] - self.y0)/(tan((self.thetaL[i]-self.muL[i])*pi/180.0)-
+                     tan((self.theta[i-1,0]+self.Mu[i-1,0])*pi/180.0)))
+                self.y[i,0] = (tan((self.thetaL[i]-
+                     self.muL[i])*pi/180.0)*(self.x[i,0]-self.x0) + self.y0)
+                if i == 1:
+                    self.Nu[i,0] = ((1.0/(sqrt(self.ML[i]**2.0-1.0)-
+                        1.0/tan(self.thetaL[i]*pi/180.0))*1.0/self.y0*(self.y[i,0]-
+                        self.y0)+(self.thetaL[i]+self.nuL[i])-(self.theta[i-1,0]-
+                        self.Nu[i-1,0]))/2.0)
+                    self.theta[i,0] = (self.theta[i-1,0]-self.Nu[i-1,0])+self.Nu[i,0]
+                else:
+                    self.Nu[i,0] = ((1.0/(sqrt(self.ML[i]**2.0-1.0)-
+                        1.0/tan(self.thetaL[i]*pi/180.0))*1.0/self.y0*(self.y[i,0]-
+                        self.y0)+(self.thetaL[i]+self.nuL[i])+1.0/(sqrt(self.M[i-1,0]**2.0-
+                        1.0)+1.0/tan(self.theta[i-1,0]*pi/180.0))*1.0/self.y[i-1,0]*
+                        (self.y[i,0]-self.y[i-1,0])-(self.theta[i-1,0]-
+                        self.Nu[i-1,0]))/2.0)
+                    self.theta[i,0] = (-1.0/(sqrt(self.M[i-1,0]**2.0-1.0)+
+                        1.0/tan(self.theta[i-1,0]*pi/180.0))*1.0/self.y[i-1,0]*
+                        (self.y[i,0]-self.y[i-1,0])+(self.theta[i-1,0]-
+                        self.Nu[i-1,0])+self.Nu[i,0])
+                self.Km[i,0] = self.theta[i,0] + self.Nu[i,0]
+                self.Kp[i,0] = self.theta[i,0] - self.Nu[i,0]
+                self.Mu[i,0] = self.PM_nu2mu(self.gamma,self.Nu[i,0])
+                self.M[i,0] = self.PM_nu2M(self.gamma,self.Nu[i,0])
+    
+        #Flow data for characteristic lines (2:end iterations)
+        for j in range(1,self.n):
+            for i in range(self.n-j):
+                if i == 0: #Center line (symmetry line)
+                    self.theta[i,j] = 0.0
+                    self.y[i,j] = 0.0
+                    self.x[i,j] = ((self.y[i,j]-self.y[i+1,j-1])/tan((self.theta[i+1,
+                        j-1]-self.Mu[i+1,j-1])*pi/180.0) + self.x[i+1,j-1])
+                    self.Km[i,j] = (1.0/(sqrt(self.M[i+1,j-1]**2.0 - 1.0) -
+                        1.0/tan(self.theta[i+1,j-1]*pi/180.0))/self.y[i+1, j-1]*
+                        (self.y[i,j]-self.y[i+1,j-1]) + self.Km[i+1,j-1])
+                    self.Nu[i,j] = self.Km[i,j] - self.theta[i,j]
+                    self.Kp[i,j] = self.theta[i,j] - self.Nu[i,j]
+                    self.Mu[i,j] = self.PM_nu2mu(self.gamma,self.Nu[i,j])
+                    self.M[i,j] = self.PM_nu2M(self.gamma,self.Nu[i,j])
+                else:
+                    self.x[i,j] = ((tan((self.theta[i+1,j-1]-self.Mu[i+1,
+                        j-1])*pi/180.0)*self.x[i+1,j-1]-tan((self.theta[i-1,
+                        j]+self.Mu[i-1,j])*pi/180.0)*self.x[i-1,j]+
+                        self.y[i-1,j]-self.y[i+1,j-1])/(tan((self.theta[i+1,j-1]-
+                        self.Mu[i+1,j-1])*pi/180.0)-tan((self.theta[i-1,j]+
+                        self.Mu[i-1,j])*pi/180.0)))
+                    self.y[i,j] = (tan((self.theta[i+1,j-1]-self.Mu[i+1,
+                        j-1])*pi/180.0)*(self.x[i,j]-self.x[i+1,j-1])+
+                        self.y[i+1,j-1])
+                    if i == 1:
+                        self.Nu[i,j] = ((1.0/(sqrt(self.M[i+1,j-1]**2.0-
+                            1.0)-1.0/tan(self.theta[i+1,
+                            j-1]*pi/180.0))*1.0/self.y[i+1,j-1]*(self.y[i,j]-
+                            self.y[i+1,j-1])+(self.theta[i+1,j-1]+self.Nu[i+1,j-1])-
+                            (self.theta[i-1,j]-self.Nu[i-1,j]))/2.0)
+                        self.theta[i,j] = (self.theta[i-1,j]-self.Nu[i-1,j])+self.Nu[i,j]
+                    else:
+                        self.Nu[i,j] = ((1.0/(sqrt(self.M[i+1,j-1]**2.0-
+                            1.0)-1.0/tan(self.theta[i+1,
+                            j-1]*pi/180.0))*1.0/self.y[i+1,
+                            j-1]*(self.y[i,j]-self.y[i+1,j-1])+
+                            (self.theta[i+1,j-1]+self.Nu[i+1,j-1])+
+                            1.0/(sqrt(self.M[i-1,j]**2.0-1.0)+
+                            1.0/tan(self.theta[i-1,
+                            j]*pi/180.0))*1.0/self.y[i-1,j]*(self.y[i,j]-
+                            self.y[i-1,j])-(self.theta[i-1,j]-self.Nu[i-1,j]))/2.0)
+                        self.theta[i,j] = (-1.0/(sqrt(self.M[i-1,j]**2.0-1.0)+
+                            1.0/tan(self.theta[i-1,j]*pi/180.0))*1.0/self.y[i-1,
+                            j]*(self.y[i,j]-self.y[i-1,j])+(self.theta[i-1,j]-
+                            self.Nu[i-1,j])+self.Nu[i,j])
+                    self.Km[i,j] = self.theta[i,j] + self.Nu[i,j]
+                    self.Kp[i,j] = self.theta[i,j] - self.Nu[i,j]
+                    self.Mu[i,j] = self.PM_nu2mu(self.gamma,self.Nu[i,j])
+                    self.M[i,j] = self.PM_nu2M(self.gamma,self.Nu[i,j])
+    
+        #Wall data
+        self.wall_axi()
+    
+    def wall_2D(self):
+        '''Calculate wall points for 2D nozzle'''
+
+        #Wall angles
+        for j in range(self.n):
+            self.thetaw[j+1] = self.theta[self.n-j-1,j]
+            self.Nuw[j+1] = self.Nu[self.n-j-1,j]
+    
+        #Wall points
+        for j in range(1,self.n+1):
+    	    #average wall slope between two points
+            mw=((tan((self.thetaw[j-1])*pi/180.0)+
+    	         tan((self.thetaw[j])*pi/180.0))/2.0); 
+            mp=(tan((self.theta[self.n-j,j-1]+
+                self.Mu[self.n-j,j-1])*pi/180.0))
+            yj=((mp*(-self.ywall[j-1]/mw+self.xwall[j-1]-self.x[self.n-j,j-1])+
+                 self.y[self.n-j,j-1])/(1-mp/mw))
+            xj=(yj-self.ywall[j-1])/mw+self.xwall[j-1]
+            self.xwall[j]=xj
+            self.ywall[j]=yj
+
+        #Organize data
+        outlet_geom = [self.xwall, self.ywall]
+        self.outlet_geom = np.transpose(outlet_geom)
+
+    def wall_axi(self):
+        '''Calculate wall points for axisymmetric nozzle'''
+
+        for j in range(1,self.n+1):
+            def myFunctions(z):
+                [X,self.Km] = z
+                eq = np.empty((2))
+                eq[0] = (tan((self.thetaw[j-1]+
+                    self.thetaw[j])/4.0*pi/180.0)*(X-self.xwall[j-1])-
+                    (self.Km-self.ywall[j-1]))
+                eq[1] = (tan((self.theta[self.n-j,j-1]+
+                    self.Mu[self.n-j,j-1])*pi/180.0)*(X-
+                    self.x[self.n-j,j-1])-(self.Km-self.y[self.n-j,j-1]))
+                return eq
+    
+            self.thetaw[j] = self.theta[self.n-j,j-1]
+            self.Mw[j] = self.M[self.n-j,j-1]
+            self.Nuw[j] = self.Nu[self.n-j,j-1]
+            self.Muw[j] = self.Mu[self.n-j,j-1]
+    
+            guess = np.array([self.xwall[j-1],self.ywall[j-1]])
+            sol = opt.root(myFunctions, guess, method='hybr')
+            self.xwall[j] = sol.x[0]
+            self.ywall[j] = sol.x[1]
+
+        #Organize data
+        outlet_geom = [self.xwall,self.ywall]
+        self.outlet_geom = np.transpose(outlet_geom)
+
+    def plot_nozzle(self):
+        '''Plot nozzle contour and characteristic lines'''
+        fig, ax = plt.subplots()
+
+        #plot wall geometry
+        ax.plot(self.xwall,self.ywall,'k')
+        
+        #plot first characteristics from nozzle throat
+        for i in range(self.n):
+            ax.plot([self.x0,self.x[i,0]],[self.y0, self.y[i,0]],'b',linewidth=0.5)
+        
+        #plot characteristics from wall
+        for j in range(1,self.n+1):
+            ax.plot([self.x[self.n-j,j-1],self.xwall[j]],[self.y[self.n-j,j-1],
+                     self.ywall[j]],'b',linewidth=0.5)
+        
+        #plot inner characteristics
+        for i in range(self.n-1):
+            for j in range(self.n-i-1):
+                ax.plot([self.x[i,j],self.x[i+1,j]],[self.y[i,j],
+                         self.y[i+1,j]],'b',linewidth=0.5)
+                ax.plot([self.x[i+1,j],self.x[i,j+1]],[self.y[i+1,j],
+                         self.y[i,j+1]],'b',linewidth=0.5)
+
+        #Plot settings
+        outdir = self.outdir
+        if '2D' in self.dim:
+            ylabel = 'Height [y]'
+            pltTitle = 'Minimum Length Nozzle (2D)'
+            Aratio = self.ywall[-1]*2.0/(self.ywall[0]*2.0)
+        elif 'AXI' in self.dim:
+            ylabel = 'Radius [r]'
+            pltTitle = 'Minimum Length Nozzle (Axisymmetric)'
+            Aratio = pi*self.ywall[-1]**2.0/(pi*self.ywall[0]**2.0)
+        pltTitle += f'\nMach={self.Me} | γ={self.gamma} | {self.n} characteristics | A/A*={Aratio:.3f}'
+        plotname = os.path.join(outdir,'figs',self.fname_base + '.png')
+        ax.set_xlabel('Length [x]')
+        ax.set_ylabel(ylabel)
+        ax.set_title(pltTitle)
+        ax.axis('scaled')
+        ax.set_xlim(xmin=self.xwall[0], xmax=1.05*self.xwall[-1])
+        ax.set_ylim(ymin=0, ymax=1.05*np.max(self.ywall))
+        ax.grid(True)
+        if not os.path.exists(os.path.dirname(plotname)):
+            os.makedirs(os.path.dirname(plotname))
+        fig.savefig(plotname)
+        if self.iplot == 2:
+            plt.show()
+        plt.close(fig)
+
+    def _test(self):
+        '''Run MOC_Nozzle test cases'''
+
+        outdir = 'tests'
+        print('Running MOC_Nozzle tests...')
+        print('2D Results:')
+        print('\tMach\tn_chars\tA/A*\terror')
+        for M in [1.5, 2.0, 2.5, 3.0, 4.0, 5.0]:
+            if M == 1.5: Aratio = 1.176
+            elif M == 2.0: Aratio = 1.687
+            elif M == 2.5: Aratio = 2.637
+            elif M == 3.0: Aratio = 4.235
+            elif M == 4.0: Aratio = 10.72
+            elif M == 5.0: Aratio = 25.00
+            for n in [5, 10, 20, 50]:
+                nozzle = MOC_Nozzle('2d', 1.4, M, n, outdir)
+                AR_sim = nozzle.ywall[-1]*2.0/(nozzle.ywall[0]*2.0)
+                print(f"\t{M:.1f}\t{n}\t{Aratio:.3f}\t{abs(AR_sim-Aratio)/Aratio*100.0:.3f}%")
+        print('Axisymmetric Results:')
+        print('\tMach\tn_chars\tA/A*\terror')
+        for M in [1.5, 2.0, 2.5, 3.0, 4.0, 5.0]:
+            if M == 1.5: Aratio = 1.176
+            elif M == 2.0: Aratio = 1.687
+            elif M == 2.5: Aratio = 2.637
+            elif M == 3.0: Aratio = 4.235
+            elif M == 4.0: Aratio = 10.72
+            elif M == 5.0: Aratio = 25.00
+            for n in [5, 10, 20, 50]:
+                nozzle = MOC_Nozzle('axi', 1.4, M, n, outdir)
+                AR_sim = pi*nozzle.ywall[-1]**2.0/(pi*nozzle.ywall[0]**2.0)
+                print(f"\t{M:.1f}\t{n}\t{Aratio:.3f}\t{abs(AR_sim-Aratio)/Aratio*100.0:.3f}%")
+        test_plot = MOC_Nozzle('2d', 1.4, 2.2, 20, outdir, 1)
+        test_plot = MOC_Nozzle('axi', 1.4, 2.2, 20, outdir, 1)
+        print('Tests complete.')
+
+    def Sauer(self):
+        '''Sauer solution for sonic line at nozzle throat (not implemented)'''
+
+        r = np.linspace(0,self.y0,self.n)
+        in_curve = 2.0*self.y0
+        alpha = sqrt(2.0/((self.gamma+1.0)*in_curve*self.y0))
+        eta = self.y0/8.0*sqrt(2.0*(self.gamma+1.0)*self.y0/in_curve)
+        x_star = -eta
+        u = alpha*x_star+(self.gamma+1)/4.0*alpha**2.0*self.y0**2.0
+        v = ((self.gamma+1.0)/2.0*(alpha**2.0*x_star*self.y0)+
+              alpha**3.0*self.y0**3.0*(self.gamma+1.0)**2.0/16.0)
+        mach = sqrt((1+u)**2.0+v**2.0)
+        x = []
+        r = np.linspace(0,self.y0,self.n)
+        for R in r:
+            x.append(-(self.gamma+1)/4.0*alpha*R**2.0)
+        x = x - np.min(x)
+        plt.scatter(x,r)
+        plt.axis('equal')
+        plt.show()
+        plt.close()
+
+    ############################
+    # Prandtl-Meyer Relations  #
+    ############################
+    
+    def PM_M2nu(self, G, M):
+        '''Prandtl-Meyer relation: Mach number -> PM function'''
+
+        # Outputs: nu [Prandtl-Meyer function] in degrees
+        # inputs:  G  [specific heat ratio]
+        #          M  [Mach number]
+        return (((sqrt((G+1.0)/(G-1.0)))*atan(sqrt((G-1.0)*(M**2.0 - 1.0)/(G+1.0))) - 
+                atan(sqrt(M**2.0 -1.0)))*180.0/pi)
+    
+    def PM_M2dnudM(self, G, M):
+        '''Prandtl-Meyer relation: Mach number -> derivative of PM function'''
+
+        # Outputs: dnu/dM [derivative of Prandtl-Meyer function wrt Mach number]
+        # inputs:  G [specific heat ratio]
+        #          M [Mach number]
+        return (((G-1.0)*sqrt((G+1.0)/(G-1.0))*M)/((G+1.0)*sqrt((G-1.0)*(M**2.0-1.0)/(G+1.0))*
+            ((G-1.0)*(M**2.0-1.0)/(G+1.0)+1.0)) - 1.0/(M*sqrt(M**2.0-1.0)))*180.0/pi
+    
+    def PM_nu2M(self, G, nu):
+        '''Prandtl-Meyer relation: PM function -> Mach number'''
+
+        # Outputs: M  [Mach number]
+        # inputs:  G  [specific heat ratio]
+        #          nu [Prandtl-Meyer function]
+    
+        # Newton-Rhapson Method
+        M = [0.0, 1.5]
+        while abs(M[0] - M[1])/M[1] > 1.0e-15:
+            M[0] = M[1]
+            M[1] = M[0] - (self.PM_M2nu(G,M[0])-nu)/self.PM_M2dnudM(G, M[0])
+        return M[1]
+    
+    def PM_nu2mu(self, G, nu):
+        '''Prandtl-Meyer relation: PM function -> Mach angle'''
+
+        # Outputs: mu [Mach angle] in degrees
+        # inputs:  G  [specific heat ratio]
+        #          nu [Prandtl-Meyer function]
+        M = self.PM_nu2M(G,nu)
+        return asin(1.0/M)*180.0/pi
+
+if __name__ == '__main__':
+    print('\nMOC Nozzle by Eric Sandall')
+    print('--------------------------')
+
+    # Parsing bash inputs
+    if len(sys.argv) <= 1:
+        help(MOC_Nozzle)
+    elif any(arg in sys.argv[1:] for arg in ['-h','--help']):
+        help(MOC_Nozzle)
+    elif set(['-d','--default']).intersection(sys.argv[1:]):
+        print('Running with default parameters.')
+        print(f"dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=0")
+        moc = MOC_Nozzle()
+    elif set(['-t','--test']).intersection(sys.argv[1:]):
+        print('Running test cases.')
+        MOC_Nozzle._test(MOC_Nozzle)
+    else:
+        # set everything initially to default values, then update if specified
+        D = ['axi']
+        G = [1.4]
+        I = 0
+        M = [2.0]
+        N = [5]
+        O = 'output'
+
+        arg = sys.argv[1:]
+        i = 0
+        while i < len(arg):
+            if '-D' == arg[i]:
+                D = arg[i+1].split(',')
+                i += 1
+            elif '--dim' == arg[i].split('=')[0]:
+                D = arg[i].split('=')[-1].split(',')
+            elif '-G' == arg[i]:
+                G = [float(a) for a in arg[i+1].split(',')]
+                i += 1
+            elif '--gamma' == arg[i].split('=')[0]:
+                G = [float(a) for a in arg[i].split('=')[-1].split(',')]
+            elif '-I' == arg[i]:
+                I = int(arg[i+1])
+                i += 1
+            elif '--iplot' == arg[i].split('=')[0]:
+                I = int(arg[i].split('=')[-1])
+            elif '-M' == arg[i]:
+                M = [float(a) for a in arg[i+1].split(',')]
+                i += 1
+            elif '--mach' == arg[i].split('=')[0]:
+                M = [float(a) for a in arg[i].split('=')[-1].split(',')]
+            elif '-N' == arg[i]:
+                N = [int(a) for a in arg[i+1].split(',')]
+                i += 1
+            elif '--n' == arg[i].split('=')[0]:
+                N = [int(a) for a in arg[i].split('=')[-1].split(',')]
+            elif '-O' == arg[i]:
+                O = str(arg[i+1])
+                i += 1
+            elif '--outdir' == arg[i].split('=')[0]:
+                O = str(arg[i].split('=')[-1])
+            else:
+                raise ValueError(f'Unknown input \"{arg[i]}\". Use -h flag for usage help.')
+            i += 1
+        print('Running MOC_Nozzle with the following parameters:')
+        print(f'dim={D}, gamma={G}, M={M}, n={N}, outdir={O}, iplot={I}')
+        print('\nIf these are not the desired values, check your syntax. Try -h or --help')
+        for d in D:
+            for g in G:
+                for m in M:
+                    for n in N:
+                        MOC_Nozzle(d,g,m,n,O,I)
