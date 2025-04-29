@@ -68,7 +68,7 @@ General usage (from linux terminal):
     -t, --test      :   run test cases
     '''
 
-    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=0):
+    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=0, r=-1.0):
         # Check inputs are valid
         assert dim.upper() in ['2D','AXI'], f'"dim" [str] expects "2d" or "axi", got {dim}'
         assert isinstance(gamma, (float, int)), '"gamma" [float] expects a number, got {gamma}'
@@ -84,6 +84,9 @@ General usage (from linux terminal):
         self.outdir = outdir
         self.iplot = iplot
         self.fname_base = f'MOC_{self.dim.lower()}_G{self.gamma:.4f}_M{self.Me:.4f}_n{self.n:04}'
+        self.r = r
+        if r <= 0:
+          self.MLN = True
         
         #x,y-coordinate for start of nozzle expansion
         #solving for top contour only
