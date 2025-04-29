@@ -5,7 +5,7 @@
 # 2D or axisymmetric
 #
 # Author: Eric Sandall
-# Last Modified: 9 July 2022
+# Original Creation: 9 July 2022
 # Versions: Python 3.7.6
 #
 
@@ -13,7 +13,8 @@ import os, sys
 import numpy as np
 import matplotlib.pyplot as plt
 import scipy.optimize as opt
-from math import pi, sqrt, tan, atan, asin
+from math import asin, pi, tan, sqrt
+import pmr
 
 
 ############################
@@ -43,17 +44,17 @@ inputs:  var      type      default     details
 
 General usage (from python)
 
-  from MOC_Nozzle import MOC_Nozzle as MOC
+  from moc_nozzle import MOC_Nozzle as MOC
   moc = MOC(**kwargs)  #kwargs are listed in inputs above
 
 General usage (from linux terminal):
 
-  python MOC_Nozzle.py [args]
+  python moc_nozzle.py [args]
         or
-  ./MOC_Nozzle.py [args]
+  ./moc_nozzle.py [args]
 
-  e.g. python MOC_Nozzle.py -h
-  e.g. ./MOC_Nozzle.py -G 1.2 --mach=1.5,2.0,2.5 -n 10 --iplot=2
+  e.g. python moc_nozzle.py -h
+  e.g. ./moc_nozzle.py -G 1.2 --mach=1.5,2.0,2.5 -n 10 --iplot=2
 
   [args]
     -d, --default   :   run with default parameters
@@ -107,7 +108,7 @@ General usage (from linux terminal):
         #Constant along left running C+ characteristic lines
         self.Kp = np.zeros([self.n,self.n])     # K+ values: theta - nu
         
-        self.nuMax = self.PM_M2nu(self.gamma, self.Me) # Prandtl-Meyer function for design Mach #
+        self.nuMax = pmr.M2nu(self.gamma, self.Me) # Prandtl-Meyer function for design Mach #
         self.thetaMax = self.nuMax/2.0 # Maximum angle at expansion corner of nozzle
         
         # Initialize wall point arrays
@@ -121,8 +122,8 @@ General usage (from linux terminal):
         self.ywall[0] = self.y0
         self.thetaw[0] = self.thetaMax
         self.Nuw[0] = self.nuMax
-        self.Muw[0] = self.PM_nu2mu(self.gamma,self.Nuw[0])
-        self.Mw[0] = self.PM_nu2M(self.gamma,self.Nuw[0])
+        self.Muw[0] = pmr.nu2mu(self.gamma,self.Nuw[0])
+        self.Mw[0] = pmr.nu2M(self.gamma,self.Nuw[0])
 
         # MOC Solver
         if '2D' in self.dim:
@@ -149,7 +150,7 @@ General usage (from linux terminal):
         self.Nu[:,0] = (np.arange(self.thetaMax/self.n, self.thetaMax +
                         0.5*self.thetaMax/self.n, self.thetaMax/self.n))
         for i in range(self.n):
-            self.M[i,0] = self.PM_nu2M(self.gamma, self.theta[i,0])
+            self.M[i,0] = pmr.nu2M(self.gamma, self.theta[i,0])
             self.Km[i,0] = self.theta[i,0] + self.Nu[i,0]
             self.Kp[i,0] = self.theta[i,0] - self.Nu[i,0]
             self.Mu[i,0] = asin(1.0/self.M[i,0])*180.0/pi
@@ -162,13 +163,13 @@ General usage (from linux terminal):
                     self.Km[i,j] = self.Km[i+1,j-1]
                     self.Kp[i,j] = 2.0*self.theta[i,j] - self.Km[i,j]
                     self.Nu[i,j] = 0.5*(self.Km[i,j] - self.Kp[i,j])
-                    self.Mu[i,j] = self.PM_nu2mu(self.gamma,self.Nu[i,j])
+                    self.Mu[i,j] = pmr.nu2mu(self.gamma,self.Nu[i,j])
                 else:
                     self.Km[i,j] = self.Km[i+1,j-1]
                     self.Kp[i,j] = self.Kp[i-1,j]
                     self.theta[i,j] = 0.5*(self.Km[i,j]+self.Kp[i,j])
                     self.Nu[i,j] = 0.5*(self.Km[i,j]-self.Kp[i,j])
-                    self.Mu[i,j] = self.PM_nu2mu(self.gamma,self.Nu[i,j])
+                    self.Mu[i,j] = pmr.nu2mu(self.gamma,self.Nu[i,j])
         
         #Characteristic line coordinates (first C+ line)
         self.y[0,0] = 0.0
@@ -216,7 +217,7 @@ General usage (from linux terminal):
         self.KpL = np.zeros(self.n)
         for i in range(self.n):
             self.nuL[i] = self.thetaL[i]
-            self.muL[i] = self.PM_nu2mu(self.gamma,self.nuL[i])
+            self.muL[i] = pmr.nu2mu(self.gamma,self.nuL[i])
             self.KmL[i] = self.thetaL[i] + self.nuL[i]
             self.KpL[i] = self.thetaL[i] - self.nuL[i]
     
@@ -232,8 +233,8 @@ General usage (from linux terminal):
                           self.KmL[i])
                 self.Nu[i,0] = self.Km[i,0] - self.theta[i,0]
                 self.Kp[i,0] = self.theta[i,0] - self.Nu[i,0]
-                self.Mu[i,0] = self.PM_nu2mu(self.gamma,self.Nu[i,0])
-                self.M[i,0] = self.PM_nu2M(self.gamma,self.Nu[i,0])
+                self.Mu[i,0] = pmr.nu2mu(self.gamma,self.Nu[i,0])
+                self.M[i,0] = pmr.nu2M(self.gamma,self.Nu[i,0])
             else:
                 self.x[i,0] = ((tan((self.thetaL[i]-self.muL[i])*pi/180.0)*self.x0 -
                      tan((self.theta[i-1,0]+self.Mu[i-1,0])*pi/180.0)*self.x[i-1,0]+
@@ -260,8 +261,8 @@ General usage (from linux terminal):
                         self.Nu[i-1,0])+self.Nu[i,0])
                 self.Km[i,0] = self.theta[i,0] + self.Nu[i,0]
                 self.Kp[i,0] = self.theta[i,0] - self.Nu[i,0]
-                self.Mu[i,0] = self.PM_nu2mu(self.gamma,self.Nu[i,0])
-                self.M[i,0] = self.PM_nu2M(self.gamma,self.Nu[i,0])
+                self.Mu[i,0] = pmr.nu2mu(self.gamma,self.Nu[i,0])
+                self.M[i,0] = pmr.nu2M(self.gamma,self.Nu[i,0])
     
         #Flow data for characteristic lines (2:end iterations)
         for j in range(1,self.n):
@@ -276,8 +277,8 @@ General usage (from linux terminal):
                         (self.y[i,j]-self.y[i+1,j-1]) + self.Km[i+1,j-1])
                     self.Nu[i,j] = self.Km[i,j] - self.theta[i,j]
                     self.Kp[i,j] = self.theta[i,j] - self.Nu[i,j]
-                    self.Mu[i,j] = self.PM_nu2mu(self.gamma,self.Nu[i,j])
-                    self.M[i,j] = self.PM_nu2M(self.gamma,self.Nu[i,j])
+                    self.Mu[i,j] = pmr.nu2mu(self.gamma,self.Nu[i,j])
+                    self.M[i,j] = pmr.nu2M(self.gamma,self.Nu[i,j])
                 else:
                     self.x[i,j] = ((tan((self.theta[i+1,j-1]-self.Mu[i+1,
                         j-1])*pi/180.0)*self.x[i+1,j-1]-tan((self.theta[i-1,
@@ -311,8 +312,8 @@ General usage (from linux terminal):
                             self.Nu[i-1,j])+self.Nu[i,j])
                     self.Km[i,j] = self.theta[i,j] + self.Nu[i,j]
                     self.Kp[i,j] = self.theta[i,j] - self.Nu[i,j]
-                    self.Mu[i,j] = self.PM_nu2mu(self.gamma,self.Nu[i,j])
-                    self.M[i,j] = self.PM_nu2M(self.gamma,self.Nu[i,j])
+                    self.Mu[i,j] = pmr.nu2mu(self.gamma,self.Nu[i,j])
+                    self.M[i,j] = pmr.nu2M(self.gamma,self.Nu[i,j])
     
         #Wall data
         self.wall_axi()
@@ -477,51 +478,6 @@ General usage (from linux terminal):
         plt.axis('equal')
         plt.show()
         plt.close()
-
-    ############################
-    # Prandtl-Meyer Relations  #
-    ############################
-    
-    def PM_M2nu(self, G, M):
-        '''Prandtl-Meyer relation: Mach number -> PM function'''
-
-        # Outputs: nu [Prandtl-Meyer function] in degrees
-        # inputs:  G  [specific heat ratio]
-        #          M  [Mach number]
-        return (((sqrt((G+1.0)/(G-1.0)))*atan(sqrt((G-1.0)*(M**2.0 - 1.0)/(G+1.0))) - 
-                atan(sqrt(M**2.0 -1.0)))*180.0/pi)
-    
-    def PM_M2dnudM(self, G, M):
-        '''Prandtl-Meyer relation: Mach number -> derivative of PM function'''
-
-        # Outputs: dnu/dM [derivative of Prandtl-Meyer function wrt Mach number]
-        # inputs:  G [specific heat ratio]
-        #          M [Mach number]
-        return (((G-1.0)*sqrt((G+1.0)/(G-1.0))*M)/((G+1.0)*sqrt((G-1.0)*(M**2.0-1.0)/(G+1.0))*
-            ((G-1.0)*(M**2.0-1.0)/(G+1.0)+1.0)) - 1.0/(M*sqrt(M**2.0-1.0)))*180.0/pi
-    
-    def PM_nu2M(self, G, nu):
-        '''Prandtl-Meyer relation: PM function -> Mach number'''
-
-        # Outputs: M  [Mach number]
-        # inputs:  G  [specific heat ratio]
-        #          nu [Prandtl-Meyer function]
-    
-        # Newton-Rhapson Method
-        M = [0.0, 1.5]
-        while abs(M[0] - M[1])/M[1] > 1.0e-15:
-            M[0] = M[1]
-            M[1] = M[0] - (self.PM_M2nu(G,M[0])-nu)/self.PM_M2dnudM(G, M[0])
-        return M[1]
-    
-    def PM_nu2mu(self, G, nu):
-        '''Prandtl-Meyer relation: PM function -> Mach angle'''
-
-        # Outputs: mu [Mach angle] in degrees
-        # inputs:  G  [specific heat ratio]
-        #          nu [Prandtl-Meyer function]
-        M = self.PM_nu2M(G,nu)
-        return asin(1.0/M)*180.0/pi
 
 if __name__ == '__main__':
     print('\nMOC Nozzle by Eric Sandall')
