@@ -140,10 +140,13 @@ General usage (from linux terminal):
             self.MOC_axi()
 
         # Generate output data file
+        self.centerline()
         if not os.path.exists(outdir):
             os.makedirs(outdir)
         fname = os.path.join(outdir,self.fname_base + '.txt')
-        np.savetxt(fname, self.wall_data, delimiter='\t', header='x\ty\tM\tPratio\tTratio\tDratio')
+        with open(fname, 'w') as f:
+          np.savetxt(f, self.wall_data, delimiter='\t', header='Wall Data\nx\ty\tM\tPratio\tTratio\tDratio')
+          np.savetxt(f, self.centerline_data, delimiter='\t', header='Centerline Data\nx\ty\tM\tPratio\tTratio\tDratio')
 
         # Plot
         if self.iplot > 0:
@@ -178,6 +181,7 @@ General usage (from linux terminal):
                     self.theta[i,j] = 0.5*(self.Km[i,j]+self.Kp[i,j])
                     self.Nu[i,j] = 0.5*(self.Km[i,j]-self.Kp[i,j])
                     self.Mu[i,j] = pmr.nu2mu(self.gamma,self.Nu[i,j])
+                self.M[i,j] = pmr.nu2M(self.gamma,self.Nu[i,j])
         
         #Characteristic line coordinates (first C+ line)
         self.y[0,0] = 0.0
@@ -386,6 +390,17 @@ General usage (from linux terminal):
         Rratiow = isen.M2Rratio(self.gamma, self.Mw)
         wall_data = [self.xwall, self.ywall, self.Mw, Pratiow, Tratiow, Rratiow]
         self.wall_data = np.transpose(wall_data)
+
+    def centerline(self):
+        centerline = np.where(abs(self.y) < 1e-6)
+        xcenter = np.concatenate([[0.0], self.x[0],[self.xwall[-1]]])
+        ycenter = np.zeros(len(xcenter))
+        Mcenter = np.concatenate([[1.0], self.M[0], [self.M[0][-1]]])
+        Pratiocenter = isen.M2Pratio(self.gamma, Mcenter)
+        Tratiocenter = isen.M2Tratio(self.gamma, Mcenter)
+        Rratiocenter = isen.M2Rratio(self.gamma, Mcenter)
+        centerline_data = [xcenter, ycenter, Mcenter, Pratiocenter, Tratiocenter, Rratiocenter]
+        self.centerline_data = np.transpose(centerline_data)
 
     def plot_nozzle(self):
         '''Plot nozzle contour and characteristic lines'''
