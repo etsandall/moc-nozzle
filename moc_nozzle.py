@@ -80,7 +80,7 @@ General usage (from linux terminal):
         assert isinstance(M, (float, int)), '"M" [float] expects a number, got {M} ({type(M)})'
         assert isinstance(n, int), '"n" [int] expects an integer, got {n} ({type(n)})'
         assert isinstance(outdir, str), '"outdir" [str] expects a relative or absolute path string, got {outdir} ({type(outdir)})'
-        assert iplot == 0 or iplot == 1 or iplot == 2, '"iplot" [int] must be 0, 1, or 2, got {iplot} ({type(iplot)})'
+        assert iplot == 0 or iplot == 1 or iplot == 2 or iplot == 3, '"iplot" [int] must be 0, 1, or 2, got {iplot} ({type(iplot)})'
         assert isinstance(r, (float, int)), '"r" [float] expects a number, got {r} ({type(r)})'
 
         self.dim = dim.upper()
@@ -159,10 +159,8 @@ General usage (from linux terminal):
         '''Method of Characteristics solver for 2D nozzle'''
 
         #Flow data for characteristic lines (1st iteration)
-        self.theta[:,0] = (np.arange(self.thetaMax/self.n, self.thetaMax +
-                           0.5*self.thetaMax/self.n, self.thetaMax/self.n))
-        self.Nu[:,0] = (np.arange(self.thetaMax/self.n, self.thetaMax +
-                        0.5*self.thetaMax/self.n, self.thetaMax/self.n))
+        self.theta[:,0] = np.linspace(0, self.thetaMax, self.n)
+        self.Nu[:,0] = np.linspace(0, self.thetaMax, self.n)
         for i in range(self.n):
             self.M[i,0] = pmr.nu2M(self.gamma, self.theta[i,0])
             self.Km[i,0] = self.theta[i,0] + self.Nu[i,0]
