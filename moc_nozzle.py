@@ -65,17 +65,20 @@ General usage (from linux terminal):
     -M, --mach      :   Mach number at nozzle exit [single number or array in Python syntax]
     -N, --n         :   number of characteristics to approximate solution [integer]
     -O, --outdir    :   relative path to save directory for output files/plots [str]
+    -R, --r         :   radius of expansion region [single number or array in Python syntax]
+                                                   [if r<0, assume minimum length nozzle]
     -t, --test      :   run test cases
     '''
 
     def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=0, r=-1.0):
         # Check inputs are valid
-        assert dim.upper() in ['2D','AXI'], f'"dim" [str] expects "2d" or "axi", got {dim}'
-        assert isinstance(gamma, (float, int)), '"gamma" [float] expects a number, got {gamma}'
-        assert isinstance(M, (float, int)), '"M" [float] expects a number, got {M}'
-        assert isinstance(n, int), '"n" [int] expects an integer, got {n}'
-        assert isinstance(outdir, str), '"outdir" [str] expects a relative or absolute path string, got {outdir}'
-        assert iplot == 0 or iplot == 1 or iplot == 2, '"iplot" [int] must be 0, 1, or 2'
+        assert dim.upper() in ['2D','AXI'], f'"dim" [str] expects "2d" or "axi", got {dim} ({type(dim)})'
+        assert isinstance(gamma, (float, int)), '"gamma" [float] expects a number, got {gamma} ({type(gamma)})'
+        assert isinstance(M, (float, int)), '"M" [float] expects a number, got {M} ({type(M)})'
+        assert isinstance(n, int), '"n" [int] expects an integer, got {n} ({type(n)})'
+        assert isinstance(outdir, str), '"outdir" [str] expects a relative or absolute path string, got {outdir} ({type(outdir)})'
+        assert iplot == 0 or iplot == 1 or iplot == 2, '"iplot" [int] must be 0, 1, or 2, got {iplot} ({type(iplot)})'
+        assert isinstance(r, (float, int)), '"r" [float] expects a number, got {r} ({type(r)})'
 
         self.dim = dim.upper()
         self.gamma = float(gamma)
