@@ -14,9 +14,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.optimize as opt
 from math import asin, pi, tan, sqrt
-import pmr
-import isentropic as isen
-
+from fluid_mechanics.isentropic import prandtl_meyer as pmr
+from fluid_mechanics.isentropic import isentropic as isen
 
 ############################
 #        MoC Solver        #
@@ -90,7 +89,7 @@ General usage (from linux terminal):
         self.outdir = outdir
         self.iplot = iplot
         self.fname_base = f'MOC_{self.dim.lower()}_G{self.gamma:.4f}_M{self.Me:.4f}_n{self.n:04}'
-        self.r = r
+        self.r = float(r)
         if r <= 0:
           self.MLN = True
         
@@ -144,7 +143,7 @@ General usage (from linux terminal):
         if not os.path.exists(outdir):
             os.makedirs(outdir)
         fname = os.path.join(outdir,self.fname_base + '.txt')
-        np.savetxt(fname, self.outlet_geom, delimiter='\t', header='x\ty')
+        np.savetxt(fname, self.wall_data, delimiter='\t', header='x\ty')
 
         # Plot
         if self.iplot > 0:
@@ -349,7 +348,7 @@ General usage (from linux terminal):
             self.ywall[j]=yj
 
         #Organize data
-        self.Mw = pmr.nu2M(self.Nuw)
+        self.Mw = pmr.nu2M(self.gamma, self.Nuw)
         Pratiow = isen.M2Pratio(self.gamma, self.Mw)
         Tratiow = isen.M2Tratio(self.gamma, self.Mw)
         Rratiow = isen.M2Rratio(self.gamma, self.Mw)
@@ -517,7 +516,7 @@ if __name__ == '__main__':
         M = [2.0]
         N = [5]
         O = 'output'
-        R = -1.0
+        R = [-1.0]
 
         arg = sys.argv[1:]
         i = 0
