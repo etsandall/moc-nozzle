@@ -453,7 +453,7 @@ General usage (from linux terminal):
             elif M == 4.0: Aratio = 10.72
             elif M == 5.0: Aratio = 25.00
             for n in [5, 10, 20, 50]:
-                nozzle = MOC_Nozzle('2d', 1.4, M, n, outdir)
+                nozzle = MOC_Nozzle('2d', 1.4, M, n, outdir, iplot=0)
                 AR_sim = nozzle.ywall[-1]*2.0/(nozzle.ywall[0]*2.0)
                 print(f"\t{M:.1f}\t{n}\t{Aratio:.3f}\t{abs(AR_sim-Aratio)/Aratio*100.0:.3f}%")
         print('Axisymmetric Results:')
@@ -466,11 +466,11 @@ General usage (from linux terminal):
             elif M == 4.0: Aratio = 10.72
             elif M == 5.0: Aratio = 25.00
             for n in [5, 10, 20, 50]:
-                nozzle = MOC_Nozzle('axi', 1.4, M, n, outdir)
+                nozzle = MOC_Nozzle('axi', 1.4, M, n, outdir, iplot=0)
                 AR_sim = pi*nozzle.ywall[-1]**2.0/(pi*nozzle.ywall[0]**2.0)
                 print(f"\t{M:.1f}\t{n}\t{Aratio:.3f}\t{abs(AR_sim-Aratio)/Aratio*100.0:.3f}%")
-        test_plot = MOC_Nozzle('2d', 1.4, 2.2, 20, outdir, 1)
-        test_plot = MOC_Nozzle('axi', 1.4, 2.2, 20, outdir, 1)
+        test_plot = MOC_Nozzle('2d', 1.4, 2.2, 20, outdir, 3)
+        test_plot = MOC_Nozzle('axi', 1.4, 2.2, 20, outdir, 3)
         print('Tests complete.')
 
     def Sauer(self):
