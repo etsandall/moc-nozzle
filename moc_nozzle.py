@@ -12,6 +12,7 @@
 import os, sys
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable as mal
 import scipy.optimize as opt
 from math import asin, pi, tan, sqrt
 from fluid_mechanics.isentropic import prandtl_meyer as pmr
@@ -134,6 +135,8 @@ General usage (from linux terminal):
         self.Mw[0] = pmr.nu2M(self.gamma,self.Nuw[0])
 
         # MOC Solver
+        if r > 0:
+            self.MOC_2D_sonic()
         if '2D' in self.dim:
             self.MOC_2D()
         elif 'AXI' in self.dim:
@@ -441,7 +444,7 @@ General usage (from linux terminal):
         ax.set_xlabel('Length [x]')
         ax.set_ylabel(ylabel)
         ax.set_title(pltTitle)
-        ax.axis('scaled')
+        ax.set_aspect(1)
         ax.set_xlim(xmin=self.xwall[0], xmax=1.05*self.xwall[-1])
         ax.set_ylim(ymin=0, ymax=1.05*np.max(self.ywall))
         ax.grid(True)
@@ -449,6 +452,60 @@ General usage (from linux terminal):
           if not os.path.exists(os.path.dirname(plotname)):
               os.makedirs(os.path.dirname(plotname))
           fig.savefig(plotname)
+
+        # Contour plots of thermodynamic variables
+        # This is pretty ugly - just trying to hack the data together in a way
+        # to show the contours nicely.  But it works! (hopefully)
+
+        # Combine wall data with non-simple region data
+        xfull = np.vstack((self.x, np.zeros([1,len(self.x)])))
+        yfull = np.vstack((self.y, np.zeros([1,len(self.y)])))
+        Mfull = np.vstack((self.M, np.zeros([1,len(self.M)])))
+        for i in range(self.n):
+          xfull[self.n-i,i] = self.xwall[i+1]
+          yfull[self.n-i,i] = self.ywall[i+1]
+          Mfull[self.n-i,i] = self.Mw[i+1]
+
+        # Add data from throat
+        xfull = np.concatenate([np.zeros([self.n+1,1]),xfull], axis=1)
+        yfull = np.concatenate([self.ywall[0]*np.ones([self.n+1,1]),yfull], axis=1)
+        yfull[0,0] = 0.0
+        Mfull = np.concatenate([np.ones([self.n+1,1]),Mfull], axis=1)
+        Mfull[1:,0] = Mfull[:-1,1]
+
+        # Add data from exit
+        xfull = np.concatenate([xfull, np.zeros([self.n+1,1])], axis=1)
+        yfull = np.concatenate([yfull, np.zeros([self.n+1,1])], axis=1)
+        Mfull = np.concatenate([Mfull, np.full([self.n+1,1],np.nan)], axis=1)
+        xfull[0,-1] = self.xwall[-1]
+        yfull[0,-1] = 0.0
+        Mfull[0,-1] = self.Mw[-1]
+        mask = np.fliplr(np.tri(Mfull.shape[0], Mfull.shape[1],k=-1))
+        Mfull = np.ma.masked_array(Mfull, mask=mask)
+        Pratio = np.ma.masked_array(isen.M2Pratio(self.gamma, Mfull), mask=mask)
+
+        fig, ax = plt.subplots()
+        cf = ax.contourf(xfull,yfull,Mfull, cmap='coolwarm', levels=200)
+        pltTitleM = pltTitle + '\nMach'
+        ax.set_aspect(1)
+        ax.set_title(pltTitleM)
+        divider = mal(ax)
+        cax = divider.append_axes('right', size='4%', pad=0.05)
+        cbar = fig.colorbar(cf, cax=cax)
+        cbar.set_ticks(np.linspace(Mfull.min(), Mfull.max(), 5))
+        fig.tight_layout()
+
+        fig, ax = plt.subplots()
+        cf = ax.contourf(xfull,yfull,Pratio, cmap='coolwarm', levels=200)
+        pltTitleP = pltTitle + '\n' + r'$P/P_t$'
+        ax.set_aspect(1)
+        ax.set_title(pltTitleP)
+        divider = mal(ax)
+        cax = divider.append_axes('right', size='4%', pad=0.05)
+        cbar = fig.colorbar(cf, cax=cax)
+        cbar.set_ticks(np.linspace(Pratio.min(), Pratio.max(), 5))
+        fig.tight_layout()
+
         if self.iplot == 1 or self.iplot == 3:
             plt.show()
         plt.close(fig)
