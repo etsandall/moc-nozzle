@@ -129,7 +129,7 @@ General usage (from linux terminal):
         self.xwall[0] = self.x0
         self.ywall[0] = self.y0
         self.thetaw[0] = self.thetaMax
-        self.Nuw[0] = self.nuMax
+        self.Nuw[0] = 0.0 #self.nuMax
         self.Muw[0] = pmr.nu2mu(self.gamma,self.Nuw[0])
         self.Mw[0] = pmr.nu2M(self.gamma,self.Nuw[0])
 
@@ -143,7 +143,7 @@ General usage (from linux terminal):
         if not os.path.exists(outdir):
             os.makedirs(outdir)
         fname = os.path.join(outdir,self.fname_base + '.txt')
-        np.savetxt(fname, self.wall_data, delimiter='\t', header='x\ty')
+        np.savetxt(fname, self.wall_data, delimiter='\t', header='x\ty\tM\tPratio\tTratio\tDratio')
 
         # Plot
         if self.iplot > 0:
@@ -381,8 +381,11 @@ General usage (from linux terminal):
             self.ywall[j] = sol.x[1]
 
         #Organize data
-        outlet_geom = [self.xwall,self.ywall]
-        self.outlet_geom = np.transpose(outlet_geom)
+        Pratiow = isen.M2Pratio(self.gamma, self.Mw)
+        Tratiow = isen.M2Tratio(self.gamma, self.Mw)
+        Rratiow = isen.M2Rratio(self.gamma, self.Mw)
+        wall_data = [self.xwall, self.ywall, self.Mw, Pratiow, Tratiow, Rratiow]
+        self.wall_data = np.transpose(wall_data)
 
     def plot_nozzle(self):
         '''Plot nozzle contour and characteristic lines'''
