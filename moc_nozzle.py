@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import scipy.optimize as opt
 from math import asin, pi, tan, sqrt
 import pmr
+import isentropic as isen
 
 
 ############################
@@ -39,8 +40,10 @@ inputs:  var      type      default     details
          M        [float]   2           desired Mach number at nozzle exit
          n        [int]     5           number of characteristics to approximate
          outdir   [str]     'output'    path to output directory
-         iplot    [int]     0           flag to save plot contour, 0:no plot, 1:save plot, 
-                                                                   2:save & show plot
+         iplot    [int]     0           flag to save plot contour, 0:no plot,
+                                                                   1:show plot only, 
+                                                                   2:save plot only,
+                                                                   3:save & show plot
 
 General usage (from python)
 
@@ -61,7 +64,7 @@ General usage (from linux terminal):
     -D, --dim       :   2d or axi [str]
     -G, --gamma     :   specific heat ratio [single number or array in Python syntax]
     -h, --help      :   display help
-    -I, --iplot     :   flag to save/show contour plots [0:no, 1:save, 2:save & show]
+    -I, --iplot     :   flag to save/show contour plots [0:no, 1:show, 2:save, 3:save & show]
     -M, --mach      :   Mach number at nozzle exit [single number or array in Python syntax]
     -N, --n         :   number of characteristics to approximate solution [integer]
     -O, --outdir    :   relative path to save directory for output files/plots [str]
@@ -70,7 +73,7 @@ General usage (from linux terminal):
     -t, --test      :   run test cases
     '''
 
-    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=0, r=-1.0):
+    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=1, r=-1.0):
         # Check inputs are valid
         assert dim.upper() in ['2D','AXI'], f'"dim" [str] expects "2d" or "axi", got {dim} ({type(dim)})'
         assert isinstance(gamma, (float, int)), '"gamma" [float] expects a number, got {gamma} ({type(gamma)})'
@@ -346,8 +349,12 @@ General usage (from linux terminal):
             self.ywall[j]=yj
 
         #Organize data
-        outlet_geom = [self.xwall, self.ywall]
-        self.outlet_geom = np.transpose(outlet_geom)
+        self.Mw = pmr.nu2M(self.Nuw)
+        Pratiow = isen.M2Pratio(self.gamma, self.Mw)
+        Tratiow = isen.M2Tratio(self.gamma, self.Mw)
+        Rratiow = isen.M2Rratio(self.gamma, self.Mw)
+        wall_data = [self.xwall, self.ywall, self.Mw, Pratiow, Tratiow, Rratiow]
+        self.wall_data = np.transpose(wall_data)
 
     def wall_axi(self):
         '''Calculate wall points for axisymmetric nozzle'''
@@ -421,10 +428,11 @@ General usage (from linux terminal):
         ax.set_xlim(xmin=self.xwall[0], xmax=1.05*self.xwall[-1])
         ax.set_ylim(ymin=0, ymax=1.05*np.max(self.ywall))
         ax.grid(True)
-        if not os.path.exists(os.path.dirname(plotname)):
-            os.makedirs(os.path.dirname(plotname))
-        fig.savefig(plotname)
-        if self.iplot == 2:
+        if self.iplot >= 2:
+          if not os.path.exists(os.path.dirname(plotname)):
+              os.makedirs(os.path.dirname(plotname))
+          fig.savefig(plotname)
+        if self.iplot == 1 or self.iplot == 3:
             plt.show()
         plt.close(fig)
 
@@ -496,7 +504,7 @@ if __name__ == '__main__':
         help(MOC_Nozzle)
     elif set(['-d','--default']).intersection(sys.argv[1:]):
         print('Running with default parameters.')
-        print(f"dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=0")
+        print(f"dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=1, r=-1.0")
         moc = MOC_Nozzle()
     elif set(['-t','--test']).intersection(sys.argv[1:]):
         print('Running test cases.')
@@ -505,10 +513,11 @@ if __name__ == '__main__':
         # set everything initially to default values, then update if specified
         D = ['axi']
         G = [1.4]
-        I = 0
+        I = 1
         M = [2.0]
         N = [5]
         O = 'output'
+        R = -1.0
 
         arg = sys.argv[1:]
         i = 0
@@ -543,14 +552,20 @@ if __name__ == '__main__':
                 i += 1
             elif '--outdir' == arg[i].split('=')[0]:
                 O = str(arg[i].split('=')[-1])
+            elif '-R' == arg[i]:
+                R = [float(a) for a in arg[i+1].split(',')]
+                i += 1
+            elif '--r' == arg[i].split('=')[0]:
+                R = [float(a) for a in arg[i].split('=')[-1].split(',')]
             else:
                 raise ValueError(f'Unknown input \"{arg[i]}\". Use -h flag for usage help.')
             i += 1
         print('Running MOC_Nozzle with the following parameters:')
-        print(f'dim={D}, gamma={G}, M={M}, n={N}, outdir={O}, iplot={I}')
+        print(f'dim={D}, gamma={G}, M={M}, n={N}, outdir={O}, iplot={I}, r={R}')
         print('\nIf these are not the desired values, check your syntax. Try -h or --help')
         for d in D:
             for g in G:
                 for m in M:
                     for n in N:
-                        MOC_Nozzle(d,g,m,n,O,I)
+                      for r in R:
+                        MOC_Nozzle(d,g,m,n,O,I,r)
