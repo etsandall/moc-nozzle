@@ -8,14 +8,15 @@ from fluid_mechanics.isentropic import isentropic as isen
 from scipy.interpolate import interp1d
 
 pwd = os.getcwd()
+files = ['../output/MOC_2d_G1.4000_M1.5000_n0200.txt',
+         '../output/MOC_2d_G1.4000_M3.0000_n0200.txt',
+         '../output/MOC_2d_G1.4000_M6.0000_n0200.txt']
 
 try:
-  files = ['../output/MOC_2d_G1.4000_M1.5000_n0200.txt',
-           '../output/MOC_2d_G1.4000_M3.0000_n0200.txt',
-           '../output/MOC_2d_G1.4000_M6.0000_n0200.txt']
+  np.loadtxt(files[0])
 except:
   os.chdir('..')
-  subprocess.call(['./moc_nozzle.py -D 2d -N 200 -I 2 -M 1.5,3,6'])
+  subprocess.call('./moc_nozzle.py -D 2d -N 200 -I 2 -M 1.5,3,6'.split(' '))
   files = ['output/MOC_2d_G1.4000_M1.5000_n0200.txt',
            'output/MOC_2d_G1.4000_M3.0000_n0200.txt',
            'output/MOC_2d_G1.4000_M6.0000_n0200.txt']
