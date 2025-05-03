@@ -487,22 +487,30 @@ General usage (from linux terminal):
         pltTitleM = pltTitle + '\nMach'
         ax.set_aspect(1)
         ax.set_title(pltTitleM)
+        ax.set_xlabel('Length [x]')
+        ax.set_ylabel(ylabel)
         divider = mal(ax)
         cax = divider.append_axes('right', size='4%', pad=0.05)
         cbar = fig.colorbar(cf, cax=cax)
         cbar.set_ticks(np.linspace(Mfull.min(), Mfull.max(), 5))
         fig.tight_layout()
+        if self.iplot >= 2:
+          fig.savefig(plotname.replace('.png','_mach.png'))
 
         fig, ax = plt.subplots()
         cf = ax.contourf(xfull,yfull,Pratio, cmap='coolwarm', levels=200)
         pltTitleP = pltTitle + '\n' + r'$P/P_t$'
         ax.set_aspect(1)
         ax.set_title(pltTitleP)
+        ax.set_xlabel('Length [x]')
+        ax.set_ylabel(ylabel)
         divider = mal(ax)
         cax = divider.append_axes('right', size='4%', pad=0.05)
         cbar = fig.colorbar(cf, cax=cax)
         cbar.set_ticks(np.linspace(Pratio.min(), Pratio.max(), 5))
         fig.tight_layout()
+        if self.iplot >= 2:
+          fig.savefig(plotname.replace('.png','_pressure.png'))
 
         if self.iplot == 1 or self.iplot == 3:
             plt.show()
