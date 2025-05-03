@@ -28,8 +28,13 @@ for f in files:
   Mw = wdat[:,2]
   Pw = wdat[:,3]
   Tw = wdat[:,4]
-  rhow = wdat[:,5]
+  Dw = wdat[:,5]
   Aw = 2.0*yw
+  interpAw = interp1d(xw,Aw,kind='linear',fill_value='extrapolate')
+  interpMw = interp1d(xw,Mw,kind='linear',fill_value='extrapolate')
+  interpPw = interp1d(xw,Pw,kind='linear',fill_value='extrapolate')
+  interpTw = interp1d(xw,Tw,kind='linear',fill_value='extrapolate')
+  interpDw = interp1d(xw,Dw,kind='linear',fill_value='extrapolate')
 
   # centerline data
   cdat = np.loadtxt(f, skiprows=203)
@@ -38,38 +43,51 @@ for f in files:
   Mc = cdat[:,2]
   Pc = cdat[:,3]
   Tc = cdat[:,4]
-  rhoc = cdat[:,5]
-  interpA = interp1d(xw,Aw,kind='linear', fill_value='extrapolate')
-  Ac = interpA(xc)
+  Dc = cdat[:,5]
+  Ac = interpAw(xc)
+  interpAc = interp1d(xc,Ac,kind='linear',fill_value='extrapolate')
+  interpMc = interp1d(xc,Mc,kind='linear',fill_value='extrapolate')
+  interpPc = interp1d(xc,Pc,kind='linear',fill_value='extrapolate')
+  interpTc = interp1d(xc,Tc,kind='linear',fill_value='extrapolate')
+  interpDc = interp1d(xc,Dc,kind='linear',fill_value='extrapolate')
 
+  # combine A arrays and interpolate all values
+  x = np.sort(np.concatenate([xw,xc]))
+  Aw = interpAw(x)
+  Mw = interpMw(x)
+  Pw = interpPw(x)
+  Tw = interpTw(x)
+  Dw = interpDw(x)
+  Ac = interpAc(x)
+  Mc = interpMc(x)
+  Pc = interpPc(x)
+  Tc = interpTc(x)
+  Dc = interpDc(x)
+  
   # averaged
-  interpM = interp1d(Aw,Mw, kind='linear')
-  interpP = interp1d(Aw,Pw, kind='linear')
-  interpT = interp1d(Aw,Tw, kind='linear')
-  interpD = interp1d(Aw,rhow, kind='linear')
-  Ma = np.mean([Mc,interpM(Ac)], axis=0)
-  Pa = np.mean([Pc,interpP(Ac)], axis=0)
-  Ta = np.mean([Tc,interpT(Ac)], axis=0)
-  rhoa = np.mean([rhoc,interpD(Ac)], axis=0)
+  Ma = np.mean([Mc,Mw], axis=0)
+  Pa = np.mean([Pc,Pw], axis=0)
+  Ta = np.mean([Tc,Tw], axis=0)
+  Da = np.mean([Dc,Dw], axis=0)
 
   # quasi-1d data
   M = isen.Aratio2M(1.4,Aw)
   P = isen.M2Pratio(1.4,M)
   T = isen.M2Tratio(1.4,M)
-  rho = isen.M2Rratio(1.4,M)
+  D = isen.M2Rratio(1.4,M)
 
   # Plot Mach
   fig, ax = plt.subplots()
-  ax.plot(xw,M, label='Quasi-1D')
-  ax.plot(xw,Mw, label='MOC Wall Profile')
-  ax.plot(xc,Mc, label='MOC Centerline')
-  ax.plot(xc,Ma, label='MOC Average')
+  ax.plot(x,M, label='Quasi-1D')
+  ax.plot(x,Mw, label='MOC Wall Profile')
+  ax.plot(x,Mc, label='MOC Centerline')
+  ax.plot(x,Ma, label='MOC Average')
   ax.legend()
   ax.grid()
   ax2 = ax.secondary_xaxis('bottom')
   labels = ax.get_xticklabels()
   label_strings = [label.get_text().replace('−','-') for label in labels]
-  labels = [f'\n{interpA(float(n)):.3f}' for n in label_strings]
+  labels = [f'\n{interpAw(float(n)):.3f}' for n in label_strings]
   ax2.set_xticks(ax.get_xticks())
   ax2.set_xticklabels(labels)
   ax.set_xlabel('\ntop: x, bottom: A/A*')
@@ -79,16 +97,16 @@ for f in files:
 
   # Plot Pressure Ratio
   fig, ax = plt.subplots()
-  ax.plot(xw,P, label='Quasi-1D')
-  ax.plot(xw,Pw, label='MOC Wall Profile')
-  ax.plot(xc,Pc, label='MOC Centerline')
-  ax.plot(xc,Pa, label='MOC Average')
+  ax.plot(x,P, label='Quasi-1D')
+  ax.plot(x,Pw, label='MOC Wall Profile')
+  ax.plot(x,Pc, label='MOC Centerline')
+  ax.plot(x,Pa, label='MOC Average')
   ax.legend()
   ax.grid()
   ax2 = ax.secondary_xaxis('bottom')
   labels = ax.get_xticklabels()
   label_strings = [label.get_text().replace('−','-') for label in labels]
-  labels = [f'\n{interpA(float(n)):.3f}' for n in label_strings]
+  labels = [f'\n{interpAw(float(n)):.3f}' for n in label_strings]
   ax2.set_xticks(ax.get_xticks())
   ax2.set_xticklabels(labels)
   ax.set_xlabel('\ntop: x, bottom: A/A*')
@@ -98,16 +116,16 @@ for f in files:
 
   # Plot Temperature Ratio
   fig, ax = plt.subplots()
-  ax.plot(xw,T, label='Quasi-1D')
-  ax.plot(xw,Tw, label='MOC Wall Profile')
-  ax.plot(xc,Tc, label='MOC Centerline')
-  ax.plot(xc,Ta, label='MOC Average')
+  ax.plot(x,T, label='Quasi-1D')
+  ax.plot(x,Tw, label='MOC Wall Profile')
+  ax.plot(x,Tc, label='MOC Centerline')
+  ax.plot(x,Ta, label='MOC Average')
   ax.legend()
   ax.grid()
   ax2 = ax.secondary_xaxis('bottom')
   labels = ax.get_xticklabels()
   label_strings = [label.get_text().replace('−','-') for label in labels]
-  labels = [f'\n{interpA(float(n)):.3f}' for n in label_strings]
+  labels = [f'\n{interpAw(float(n)):.3f}' for n in label_strings]
   ax2.set_xticks(ax.get_xticks())
   ax2.set_xticklabels(labels)
   ax.set_xlabel('\ntop: x, bottom: A/A*')
@@ -117,16 +135,16 @@ for f in files:
 
   # Plot Density Ratio
   fig, ax = plt.subplots()
-  ax.plot(xw,rho, label='Quasi-1D')
-  ax.plot(xw,rhow, label='MOC Wall Profile')
-  ax.plot(xc,rhoc, label='MOC Centerline')
-  ax.plot(xc,rhoa, label='MOC Average')
+  ax.plot(x,D, label='Quasi-1D')
+  ax.plot(x,Dw, label='MOC Wall Profile')
+  ax.plot(x,Dc, label='MOC Centerline')
+  ax.plot(x,Da, label='MOC Average')
   ax.legend()
   ax.grid()
   ax2 = ax.secondary_xaxis('bottom')
   labels = ax.get_xticklabels()
   label_strings = [label.get_text().replace('−','-') for label in labels]
-  labels = [f'\n{interpA(float(n)):.3f}' for n in label_strings]
+  labels = [f'\n{interpAw(float(n)):.3f}' for n in label_strings]
   ax2.set_xticks(ax.get_xticks())
   ax2.set_xticklabels(labels)
   ax.set_xlabel('\ntop: x, bottom: A/A*')
