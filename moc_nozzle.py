@@ -375,6 +375,7 @@ General usage (from linux terminal):
             xj=(yj-self.ywall[start+j-1])/mw+self.xwall[start+j-1]
             self.xwall[start+j]=xj
             self.ywall[start+j]=yj
+        assert all(np.diff(self.xwall) >= 0.0), 'Intersecting characteristics in simple region in expanding section.'
 
         #Organize data
         self.Mw = pmr.nu2M(self.gamma, self.Nuw)
@@ -495,8 +496,13 @@ General usage (from linux terminal):
             Mfull[self.n-i,i] = self.Mw[start+i+1]
 
         # Add data from throat
-        xfull = np.concatenate([np.zeros([self.n+1,1]),xfull], axis=1)
-        yfull = np.concatenate([self.ywall[0]*np.ones([self.n+1,1]),yfull], axis=1)
+        prex = np.zeros([self.n+1,1])
+        prey = self.ywall[0]*np.ones([self.n+1,1])
+        if not self.MLN:
+            prex[1:,0] = self.x0 + self.r*sin(self.thetaw[:self.n]*deg2rad)
+            prey[1:,0] = self.y0 + self.r - self.r*cos(self.thetaw[:self.n]*deg2rad)
+        xfull = np.concatenate([prex,xfull], axis=1)
+        yfull = np.concatenate([prey,yfull], axis=1)
         yfull[0,0] = 0.0
         Mfull = np.concatenate([np.ones([self.n+1,1]),Mfull], axis=1)
         Mfull[1:,0] = Mfull[:-1,1]
