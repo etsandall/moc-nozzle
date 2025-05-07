@@ -14,13 +14,16 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable as mal
 import scipy.optimize as opt
-from math import asin, pi, tan, sqrt
+from math import asin, pi, tan, sqrt, cos, sin
 from fluid_mechanics.isentropic import prandtl_meyer as pmr
 from fluid_mechanics.isentropic import isentropic as isen
 
 ############################
 #        MoC Solver        #
 ############################
+
+deg2rad = pi/180.0
+rad2deg = 180.0/pi
 
 class MOC_Nozzle:
     '''
@@ -92,7 +95,9 @@ General usage (from linux terminal):
         self.fname_base = f'MOC_{self.dim.lower()}_G{self.gamma:.4f}_M{self.Me:.4f}_n{self.n:04}'
         self.r = float(r)
         if r <= 0:
-          self.MLN = True
+            self.MLN = True
+        else:
+            self.MLN = False
         
         #x,y-coordinate for start of nozzle expansion
         #solving for top contour only
@@ -121,26 +126,30 @@ General usage (from linux terminal):
         self.thetaMax = self.nuMax/2.0 # Maximum angle at expansion corner of nozzle
         
         # Initialize wall point arrays
-        self.xwall = np.zeros([self.n+1])
-        self.ywall = np.zeros([self.n+1])
-        self.thetaw = np.zeros([self.n+1])
-        self.Nuw = np.zeros([self.n+1])
-        self.Muw = np.zeros([self.n+1])
-        self.Mw = np.zeros([self.n+1])
+        if self.MLN:
+          wall_size = self.n + 1
+        else:
+          wall_size = 2*self.n + 1
+        self.xwall = np.zeros([wall_size])
+        self.ywall = np.zeros([wall_size])
+        self.thetaw = np.zeros([wall_size])
+        self.Nuw = np.zeros([wall_size])
+        self.Muw = np.zeros([wall_size])
+        self.Mw = np.zeros([wall_size])
         self.xwall[0] = self.x0
         self.ywall[0] = self.y0
-        self.thetaw[0] = self.thetaMax
-        self.Nuw[0] = 0.0 #self.nuMax
+        self.thetaw[0] = 0.0
+        self.Nuw[0] = 0.0
         self.Muw[0] = pmr.nu2mu(self.gamma,self.Nuw[0])
         self.Mw[0] = pmr.nu2M(self.gamma,self.Nuw[0])
 
         # MOC Solver
-        if r > 0:
-            self.MOC_2D_sonic()
-        if '2D' in self.dim:
-            self.MOC_2D()
-        elif 'AXI' in self.dim:
+        if 'AXI' in self.dim:
             self.MOC_axi()
+        elif '2D' in self.dim:
+            self.MOC_2D(r)
+        else:
+            raise SyntaxError(f'Invalid MOC Solver type.  Should be axi or 2d but got {self.dim.lower()}')
 
         # Generate output data file
         self.centerline()
@@ -155,19 +164,22 @@ General usage (from linux terminal):
         if self.iplot > 0:
             self.plot_nozzle()
 
-    def MOC_2D(self):
+    def MOC_2D(self, r=0.0):
         '''Method of Characteristics solver for 2D nozzle'''
 
+        if r < 0:
+            r = 0.0
+
         #Flow data for characteristic lines (1st iteration)
-        self.theta[:,0] = np.linspace(0, self.thetaMax, self.n)
-        self.Nu[:,0] = np.linspace(0, self.thetaMax, self.n)
+        self.theta[:,0] = np.linspace(self.thetaMax/self.n, self.thetaMax, self.n)
+        self.Nu[:,0]    = np.linspace(self.thetaMax/self.n, self.thetaMax, self.n)
         for i in range(self.n):
             self.M[i,0] = pmr.nu2M(self.gamma, self.theta[i,0])
             self.Km[i,0] = self.theta[i,0] + self.Nu[i,0]
             self.Kp[i,0] = self.theta[i,0] - self.Nu[i,0]
             self.Mu[i,0] = asin(1.0/self.M[i,0])*180.0/pi
         
-        #Flow data for characteristic lines (2:end iterations)
+        #Flow data for characteristic lines (2: iterations)
         for j in range(1,self.n):
             for i in range(self.n-j):
                 if i == 0:
@@ -186,12 +198,12 @@ General usage (from linux terminal):
         
         #Characteristic line coordinates (first C+ line)
         self.y[0,0] = 0.0
-        self.x[0,0] = self.x0 - self.y0/(tan((self.theta[0,0]-self.Mu[0,0])*pi/180.0))
+        self.x[0,0] = self.x0 - self.y0/(tan((self.theta[0,0]-self.Mu[0,0])*deg2rad))
         for i in range(1,self.n):
-            mp = tan((self.theta[i-1,0]+self.Mu[i-1,0])*pi/180.0)
-            mm = tan((self.theta[i,0]-self.Mu[i,0])*pi/180.0)
-            yi=(self.y[i-1,0]-mp*(self.y0/mm-self.x0+self.x[i-1,0]))/(1-mp/mm)
-            xi=(yi-self.y0)/mm+self.x0
+            mp = tan((self.theta[i-1,0]+self.Mu[i-1,0])*deg2rad)
+            mm = tan((self.theta[i,0]-self.Mu[i,0])*deg2rad)
+            yi=(self.y[i-1,0]-mp*((self.y0 + r - r*cos(self.theta[i,0]*deg2rad))/mm-(self.x0 + r*sin(self.theta[i,0]*deg2rad))+self.x[i-1,0]))/(1.0-mp/mm)
+            xi=(yi-(self.y0 + r - r*cos(self.theta[i,0]*deg2rad)))/mm+(self.x0 + r*sin(self.theta[i,0]*deg2rad))
             self.x[i,0]=xi
             self.y[i,0]=yi
     
@@ -335,6 +347,8 @@ General usage (from linux terminal):
         '''Calculate wall points for 2D nozzle'''
 
         #Wall angles
+        self.thetaw[0] = self.thetaMax
+        self.Nuw[0] = self.thetaMax
         for j in range(self.n):
             self.thetaw[j+1] = self.theta[self.n-j-1,j]
             self.Nuw[j+1] = self.Nu[self.n-j-1,j]
@@ -363,6 +377,8 @@ General usage (from linux terminal):
     def wall_axi(self):
         '''Calculate wall points for axisymmetric nozzle'''
 
+        self.thetaw[0] = self.thetaMax
+        self.Nuw[0] = self.thetaMax
         for j in range(1,self.n+1):
             def myFunctions(z):
                 [X,self.Km] = z
@@ -522,7 +538,7 @@ General usage (from linux terminal):
         outdir = 'tests'
         print('Running MOC_Nozzle tests...')
         print('2D Results:')
-        print('\tMach\tn_chars\tA/A*\terror')
+        print('\tMach\tn_chars\tA/A*\tMOC A/A*\terror')
         for M in [1.5, 2.0, 2.5, 3.0, 4.0, 5.0]:
             if M == 1.5: Aratio = 1.176
             elif M == 2.0: Aratio = 1.687
@@ -533,9 +549,9 @@ General usage (from linux terminal):
             for n in [5, 10, 20, 50]:
                 nozzle = MOC_Nozzle('2d', 1.4, M, n, outdir, iplot=0)
                 AR_sim = nozzle.ywall[-1]*2.0/(nozzle.ywall[0]*2.0)
-                print(f"\t{M:.1f}\t{n}\t{Aratio:.3f}\t{abs(AR_sim-Aratio)/Aratio*100.0:.3f}%")
+                print(f"\t{M:.1f}\t{n}\t{Aratio:.3f}\t{AR_sim:.6f}\t{abs(AR_sim-Aratio)/Aratio*100.0:.3f}%")
         print('Axisymmetric Results:')
-        print('\tMach\tn_chars\tA/A*\terror')
+        print('\tMach\tn_chars\tA/A*\tMOC A/A*\terror')
         for M in [1.5, 2.0, 2.5, 3.0, 4.0, 5.0]:
             if M == 1.5: Aratio = 1.176
             elif M == 2.0: Aratio = 1.687
@@ -546,7 +562,7 @@ General usage (from linux terminal):
             for n in [5, 10, 20, 50]:
                 nozzle = MOC_Nozzle('axi', 1.4, M, n, outdir, iplot=0)
                 AR_sim = pi*nozzle.ywall[-1]**2.0/(pi*nozzle.ywall[0]**2.0)
-                print(f"\t{M:.1f}\t{n}\t{Aratio:.3f}\t{abs(AR_sim-Aratio)/Aratio*100.0:.3f}%")
+                print(f"\t{M:.1f}\t{n}\t{Aratio:.3f}\t{AR_sim:.6f}\t{abs(AR_sim-Aratio)/Aratio*100.0:.3f}%")
         test_plot = MOC_Nozzle('2d', 1.4, 2.2, 20, outdir, 3)
         test_plot = MOC_Nozzle('axi', 1.4, 2.2, 20, outdir, 3)
         print('Tests complete.')
