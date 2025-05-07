@@ -77,7 +77,7 @@ General usage (from linux terminal):
     -t, --test      :   run test cases
     '''
 
-    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=1, r=-1.0):
+    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=1, r=0.0):
         # Check inputs are valid
         assert dim.upper() in ['2D','AXI'], f'"dim" [str] expects "2d" or "axi", got {dim} ({type(dim)})'
         assert isinstance(gamma, (float, int)), '"gamma" [float] expects a number, got {gamma} ({type(gamma)})'
@@ -95,10 +95,10 @@ General usage (from linux terminal):
         self.iplot = iplot
         self.fname_base = f'MOC_{self.dim.lower()}_G{self.gamma:.4f}_M{self.Me:.4f}_n{self.n:04}'
         self.r = float(r)
-        if r <= 0:
-            self.MLN = True
-        else:
+        if r > 0:
             self.MLN = False
+        else:
+            self.MLN = True
         
         #x,y-coordinate for start of nozzle expansion
         #solving for top contour only
@@ -108,7 +108,7 @@ General usage (from linux terminal):
         if '2D' in self.dim:
             self.y0 = self.A0/2.0
         elif 'AXI' in self.dim:
-            self.y0 = sqrt(1.0/pi)
+            self.y0 = sqrt(self.A0/pi)
 
         # Initialize arrays
         self.x=np.zeros([self.n,self.n])        # x coordinates
@@ -148,7 +148,7 @@ General usage (from linux terminal):
         if 'AXI' in self.dim:
             self.MOC_axi()
         elif '2D' in self.dim:
-            self.MOC_2D(r)
+            self.MOC_2D()
         else:
             raise SyntaxError(f'Invalid MOC Solver type.  Should be axi or 2d but got {self.dim.lower()}')
 
@@ -165,11 +165,8 @@ General usage (from linux terminal):
         if self.iplot > 0:
             self.plot_nozzle()
 
-    def MOC_2D(self, r=0.0):
+    def MOC_2D(self):
         '''Method of Characteristics solver for 2D nozzle'''
-
-        if r < 0:
-            r = 0.0
 
         #Flow data for characteristic lines (1st iteration)
         self.theta[:,0] = np.linspace(self.thetaMax/self.n, self.thetaMax, self.n)
@@ -178,7 +175,7 @@ General usage (from linux terminal):
             self.M[i,0] = pmr.nu2M(self.gamma, self.theta[i,0])
             self.Km[i,0] = self.theta[i,0] + self.Nu[i,0]
             self.Kp[i,0] = self.theta[i,0] - self.Nu[i,0]
-            self.Mu[i,0] = asin(1.0/self.M[i,0])*180.0/pi
+            self.Mu[i,0] = asin(1.0/self.M[i,0])*rad2deg
         
         #Flow data for characteristic lines (2: iterations)
         for j in range(1,self.n):
@@ -203,8 +200,8 @@ General usage (from linux terminal):
         for i in range(1,self.n):
             mp = tan((self.theta[i-1,0]+self.Mu[i-1,0])*deg2rad)
             mm = tan((self.theta[i,0]-self.Mu[i,0])*deg2rad)
-            yi=(self.y[i-1,0]-mp*((self.y0 + r - r*cos(self.theta[i,0]*deg2rad))/mm-(self.x0 + r*sin(self.theta[i,0]*deg2rad))+self.x[i-1,0]))/(1.0-mp/mm)
-            xi=(yi-(self.y0 + r - r*cos(self.theta[i,0]*deg2rad)))/mm+(self.x0 + r*sin(self.theta[i,0]*deg2rad))
+            yi=(self.y[i-1,0]-mp*((self.y0 + self.r - self.r*cos(self.theta[i,0]*deg2rad))/mm-(self.x0 + self.r*sin(self.theta[i,0]*deg2rad))+self.x[i-1,0]))/(1.0-mp/mm)
+            xi=(yi-(self.y0 + self.r - self.r*cos(self.theta[i,0]*deg2rad)))/mm+(self.x0 + self.r*sin(self.theta[i,0]*deg2rad))
             self.x[i,0]=xi
             self.y[i,0]=yi
     
@@ -213,13 +210,13 @@ General usage (from linux terminal):
             for i in range(0,self.n-j):
                 if i==0: #point is on symmetry axis (y=0)
                     yi=0
-                    mm=tan((self.theta[i+1,j-1]-self.Mu[i+1,j-1])*pi/180.0)
+                    mm=tan((self.theta[i+1,j-1]-self.Mu[i+1,j-1])*deg2rad)
                     xi=(yi-self.y[i+1,j-1]+mm*self.x[i+1,j-1])/mm
                     self.x[i,j]=xi
                     self.y[i,j]=yi
                 else:
-                    mp=tan((self.theta[i-1,j]+self.Mu[i-1,j])*pi/180.0)
-                    mm=tan((self.theta[i+1,j-1]-self.Mu[i+1,j-1])*pi/180)
+                    mp=tan((self.theta[i-1,j]+self.Mu[i-1,j])*deg2rad)
+                    mm=tan((self.theta[i+1,j-1]-self.Mu[i+1,j-1])*deg2rad)
                     yi=((mm*(-self.y[i-1,j]/mp+self.x[i-1,j]-self.x[i+1,j-1])+
                          self.y[i+1,j-1])/(1-mm/mp))
                     xi=(yi-self.y[i-1,j])/mp+self.x[i-1,j]
@@ -234,8 +231,7 @@ General usage (from linux terminal):
 
         #Initial data at entrance point of throat
         self.thetaL = np.zeros(self.n)
-        self.thetaL[:] = np.arange(self.thetaMax/self.n,
-              self.thetaMax+self.thetaMax/self.n/2.0,self.thetaMax/self.n)
+        self.thetaL[:] = np.linspace(self.thetaMax/self.n, self.thetaMax, self.n)
         self.ML = np.ones(self.n)
         self.nuL = np.zeros(self.n)
         self.muL = np.zeros(self.n)
@@ -252,37 +248,37 @@ General usage (from linux terminal):
             if i == 0:
                 self.theta[i,0] = 0.0
                 self.y[i,0] = 0.0
-                self.x[i,0] = ((self.y[i,0]-self.y0)/tan((self.thetaL[i]-
-                           self.muL[i])*pi/180.0) + self.x0)
+                self.x[i,0] = ((self.y[i,0]-(self.y0 + self.r - self.r*cos(self.thetaL[i]*deg2rad)))/tan((self.thetaL[i]-
+                           self.muL[i])*deg2rad) + (self.x0 + self.r*sin(self.thetaL[i]*deg2rad)))
                 self.Km[i,0] = (1.0/(sqrt(self.ML[i]**2.0 - 1.0) -
-                          1.0/tan(self.thetaL[i]*pi/180.0))/self.y0*(self.y[i,0]-self.y0)+
+                          1.0/tan(self.thetaL[i]*deg2rad))/(self.y0 + self.r - self.r*cos(self.thetaL[i]*deg2rad))*(self.y[i,0]-(self.y0 + self.r - self.r*cos(self.thetaL[i]*deg2rad)))+
                           self.KmL[i])
                 self.Nu[i,0] = self.Km[i,0] - self.theta[i,0]
                 self.Kp[i,0] = self.theta[i,0] - self.Nu[i,0]
                 self.Mu[i,0] = pmr.nu2mu(self.gamma,self.Nu[i,0])
                 self.M[i,0] = pmr.nu2M(self.gamma,self.Nu[i,0])
             else:
-                self.x[i,0] = ((tan((self.thetaL[i]-self.muL[i])*pi/180.0)*self.x0 -
-                     tan((self.theta[i-1,0]+self.Mu[i-1,0])*pi/180.0)*self.x[i-1,0]+
-                     self.y[i-1,0] - self.y0)/(tan((self.thetaL[i]-self.muL[i])*pi/180.0)-
-                     tan((self.theta[i-1,0]+self.Mu[i-1,0])*pi/180.0)))
+                self.x[i,0] = ((tan((self.thetaL[i]-self.muL[i])*deg2rad)*(self.x0 + self.r*sin(self.thetaL[i]*deg2rad)) -
+                     tan((self.theta[i-1,0]+self.Mu[i-1,0])*deg2rad)*self.x[i-1,0]+
+                     self.y[i-1,0] - (self.y0 + self.r - self.r*cos(self.thetaL[i]*deg2rad)))/(tan((self.thetaL[i]-self.muL[i])*deg2rad)-
+                     tan((self.theta[i-1,0]+self.Mu[i-1,0])*deg2rad)))
                 self.y[i,0] = (tan((self.thetaL[i]-
-                     self.muL[i])*pi/180.0)*(self.x[i,0]-self.x0) + self.y0)
+                     self.muL[i])*deg2rad)*(self.x[i,0]-(self.x0 + self.r*sin(self.thetaL[i]*deg2rad))) + (self.y0 + self.r - self.r*cos(self.thetaL[i]*deg2rad)))
                 if i == 1:
                     self.Nu[i,0] = ((1.0/(sqrt(self.ML[i]**2.0-1.0)-
-                        1.0/tan(self.thetaL[i]*pi/180.0))*1.0/self.y0*(self.y[i,0]-
-                        self.y0)+(self.thetaL[i]+self.nuL[i])-(self.theta[i-1,0]-
+                        1.0/tan(self.thetaL[i]*deg2rad))/(self.y0 + self.r - self.r*cos(self.thetaL[i]*deg2rad))*(self.y[i,0]-
+                        (self.y0 + self.r - self.r*cos(self.thetaL[i]*deg2rad)))+(self.thetaL[i]+self.nuL[i])-(self.theta[i-1,0]-
                         self.Nu[i-1,0]))/2.0)
                     self.theta[i,0] = (self.theta[i-1,0]-self.Nu[i-1,0])+self.Nu[i,0]
                 else:
                     self.Nu[i,0] = ((1.0/(sqrt(self.ML[i]**2.0-1.0)-
-                        1.0/tan(self.thetaL[i]*pi/180.0))*1.0/self.y0*(self.y[i,0]-
-                        self.y0)+(self.thetaL[i]+self.nuL[i])+1.0/(sqrt(self.M[i-1,0]**2.0-
-                        1.0)+1.0/tan(self.theta[i-1,0]*pi/180.0))*1.0/self.y[i-1,0]*
+                        1.0/tan(self.thetaL[i]*deg2rad))/(self.y0 + self.r - self.r*cos(self.thetaL[i]*deg2rad))*(self.y[i,0]-
+                        (self.y0 + self.r - self.r*cos(self.thetaL[i]*deg2rad)))+(self.thetaL[i]+self.nuL[i])+1.0/(sqrt(self.M[i-1,0]**2.0-
+                        1.0)+1.0/tan(self.theta[i-1,0]*deg2rad))/self.y[i-1,0]*
                         (self.y[i,0]-self.y[i-1,0])-(self.theta[i-1,0]-
                         self.Nu[i-1,0]))/2.0)
                     self.theta[i,0] = (-1.0/(sqrt(self.M[i-1,0]**2.0-1.0)+
-                        1.0/tan(self.theta[i-1,0]*pi/180.0))*1.0/self.y[i-1,0]*
+                        1.0/tan(self.theta[i-1,0]*deg2rad))/self.y[i-1,0]*
                         (self.y[i,0]-self.y[i-1,0])+(self.theta[i-1,0]-
                         self.Nu[i-1,0])+self.Nu[i,0])
                 self.Km[i,0] = self.theta[i,0] + self.Nu[i,0]
@@ -290,16 +286,16 @@ General usage (from linux terminal):
                 self.Mu[i,0] = pmr.nu2mu(self.gamma,self.Nu[i,0])
                 self.M[i,0] = pmr.nu2M(self.gamma,self.Nu[i,0])
     
-        #Flow data for characteristic lines (2:end iterations)
+        #Flow data for characteristic lines (2: iterations)
         for j in range(1,self.n):
             for i in range(self.n-j):
                 if i == 0: #Center line (symmetry line)
                     self.theta[i,j] = 0.0
                     self.y[i,j] = 0.0
                     self.x[i,j] = ((self.y[i,j]-self.y[i+1,j-1])/tan((self.theta[i+1,
-                        j-1]-self.Mu[i+1,j-1])*pi/180.0) + self.x[i+1,j-1])
+                        j-1]-self.Mu[i+1,j-1])*deg2rad) + self.x[i+1,j-1])
                     self.Km[i,j] = (1.0/(sqrt(self.M[i+1,j-1]**2.0 - 1.0) -
-                        1.0/tan(self.theta[i+1,j-1]*pi/180.0))/self.y[i+1, j-1]*
+                        1.0/tan(self.theta[i+1,j-1]*deg2rad))/self.y[i+1, j-1]*
                         (self.y[i,j]-self.y[i+1,j-1]) + self.Km[i+1,j-1])
                     self.Nu[i,j] = self.Km[i,j] - self.theta[i,j]
                     self.Kp[i,j] = self.theta[i,j] - self.Nu[i,j]
@@ -307,33 +303,30 @@ General usage (from linux terminal):
                     self.M[i,j] = pmr.nu2M(self.gamma,self.Nu[i,j])
                 else:
                     self.x[i,j] = ((tan((self.theta[i+1,j-1]-self.Mu[i+1,
-                        j-1])*pi/180.0)*self.x[i+1,j-1]-tan((self.theta[i-1,
-                        j]+self.Mu[i-1,j])*pi/180.0)*self.x[i-1,j]+
+                        j-1])*deg2rad)*self.x[i+1,j-1]-tan((self.theta[i-1,
+                        j]+self.Mu[i-1,j])*deg2rad)*self.x[i-1,j]+
                         self.y[i-1,j]-self.y[i+1,j-1])/(tan((self.theta[i+1,j-1]-
-                        self.Mu[i+1,j-1])*pi/180.0)-tan((self.theta[i-1,j]+
-                        self.Mu[i-1,j])*pi/180.0)))
+                        self.Mu[i+1,j-1])*deg2rad)-tan((self.theta[i-1,j]+
+                        self.Mu[i-1,j])*deg2rad)))
                     self.y[i,j] = (tan((self.theta[i+1,j-1]-self.Mu[i+1,
-                        j-1])*pi/180.0)*(self.x[i,j]-self.x[i+1,j-1])+
+                        j-1])*deg2rad)*(self.x[i,j]-self.x[i+1,j-1])+
                         self.y[i+1,j-1])
                     if i == 1:
-                        self.Nu[i,j] = ((1.0/(sqrt(self.M[i+1,j-1]**2.0-
-                            1.0)-1.0/tan(self.theta[i+1,
-                            j-1]*pi/180.0))*1.0/self.y[i+1,j-1]*(self.y[i,j]-
-                            self.y[i+1,j-1])+(self.theta[i+1,j-1]+self.Nu[i+1,j-1])-
-                            (self.theta[i-1,j]-self.Nu[i-1,j]))/2.0)
+                        self.Nu[i,j] = ((1.0/(sqrt(self.M[i+1,j-1]**2.0-1.0)-1.0/
+                            tan(self.theta[i+1,j-1]*deg2rad))/self.y[i+1,j-1]*
+                            (self.y[i,j]-self.y[i+1,j-1])+(self.theta[i+1,j-1]+
+                            self.Nu[i+1,j-1])-(self.theta[i-1,j]-self.Nu[i-1,j]))/2.0)
                         self.theta[i,j] = (self.theta[i-1,j]-self.Nu[i-1,j])+self.Nu[i,j]
                     else:
-                        self.Nu[i,j] = ((1.0/(sqrt(self.M[i+1,j-1]**2.0-
-                            1.0)-1.0/tan(self.theta[i+1,
-                            j-1]*pi/180.0))*1.0/self.y[i+1,
-                            j-1]*(self.y[i,j]-self.y[i+1,j-1])+
-                            (self.theta[i+1,j-1]+self.Nu[i+1,j-1])+
-                            1.0/(sqrt(self.M[i-1,j]**2.0-1.0)+
-                            1.0/tan(self.theta[i-1,
-                            j]*pi/180.0))*1.0/self.y[i-1,j]*(self.y[i,j]-
-                            self.y[i-1,j])-(self.theta[i-1,j]-self.Nu[i-1,j]))/2.0)
+                        self.Nu[i,j] = ((1.0/(sqrt(self.M[i+1,j-1]**2.0-1.0)-1.0/
+                            tan(self.theta[i+1,j-1]*deg2rad))/self.y[i+1,j-1]*
+                            (self.y[i,j]-self.y[i+1,j-1])+(self.theta[i+1,j-1]+
+                            self.Nu[i+1,j-1])+1.0/(sqrt(self.M[i-1,j]**2.0-1.0)+
+                            1.0/tan(self.theta[i-1,j]*deg2rad))/self.y[i-1,j]*
+                            (self.y[i,j]-self.y[i-1,j])-(self.theta[i-1,j]-
+                            self.Nu[i-1,j]))/2.0)
                         self.theta[i,j] = (-1.0/(sqrt(self.M[i-1,j]**2.0-1.0)+
-                            1.0/tan(self.theta[i-1,j]*pi/180.0))*1.0/self.y[i-1,
+                            1.0/tan(self.theta[i-1,j]*deg2rad))/self.y[i-1,
                             j]*(self.y[i,j]-self.y[i-1,j])+(self.theta[i-1,j]-
                             self.Nu[i-1,j])+self.Nu[i,j])
                     self.Km[i,j] = self.theta[i,j] + self.Nu[i,j]
@@ -388,29 +381,39 @@ General usage (from linux terminal):
     def wall_axi(self):
         '''Calculate wall points for axisymmetric nozzle'''
 
-        self.thetaw[0] = self.thetaMax
-        self.Nuw[0] = self.thetaMax
+        if self.MLN:
+            start = 0
+            self.thetaw[0] = self.thetaMax
+            self.Nuw[0] = self.thetaMax
+        else:
+            start = self.n - 1
+            self.thetaw[1:self.n+1] = np.linspace(self.thetaMax/self.n, self.thetaMax, self.n)
+            self.Nuw[1:self.n+1] = np.linspace(self.thetaMax/self.n, self.thetaMax, self.n)
+            self.xwall[1:self.n+1] = self.x0 + self.r*sin(self.thetaw[1:self.n+1]*deg2rad)
+            self.ywall[1:self.n+1] = self.y0 + self.r - self.r*cos(self.thetaw[1:self.n+1]*deg2rad)
+
         for j in range(1,self.n+1):
             def myFunctions(z):
                 [X,self.Km] = z
                 eq = np.empty((2))
-                eq[0] = (tan((self.thetaw[j-1]+
-                    self.thetaw[j])/4.0*pi/180.0)*(X-self.xwall[j-1])-
-                    (self.Km-self.ywall[j-1]))
+                eq[0] = (tan((self.thetaw[start+j-1]+
+                    self.thetaw[start+j])/4.0*deg2rad)*(X-self.xwall[start+j-1])-
+                    (self.Km-self.ywall[start+j-1]))
                 eq[1] = (tan((self.theta[self.n-j,j-1]+
-                    self.Mu[self.n-j,j-1])*pi/180.0)*(X-
-                    self.x[self.n-j,j-1])-(self.Km-self.y[self.n-j,j-1]))
+                    self.Mu[self.n-j,j-1])*deg2rad)*(X-
+                    self.x[self.n-j,j-1])-(self.Km-self.y[self.n-j-1,j-1]))
                 return eq
     
-            self.thetaw[j] = self.theta[self.n-j,j-1]
-            self.Mw[j] = self.M[self.n-j,j-1]
-            self.Nuw[j] = self.Nu[self.n-j,j-1]
-            self.Muw[j] = self.Mu[self.n-j,j-1]
+            self.thetaw[start+j] = self.theta[self.n-j,j-1]
+            self.Mw[start+j] = self.M[self.n-j,j-1]
+            self.Nuw[start+j] = self.Nu[self.n-j,j-1]
+            self.Muw[start+j] = self.Mu[self.n-j,j-1]
     
-            guess = np.array([self.xwall[j-1],self.ywall[j-1]])
+            guess = np.array([self.xwall[start+j-1],self.ywall[start+j-1]])
             sol = opt.root(myFunctions, guess, method='hybr')
-            self.xwall[j] = sol.x[0]
-            self.ywall[j] = sol.x[1]
+            self.xwall[start+j] = sol.x[0]
+            self.ywall[start+j] = sol.x[1]
+        assert all(np.diff(self.xwall) >= 0.0), 'Intersecting characteristics in simple region in expanding section.'
 
         #Organize data
         Pratiow = isen.M2Pratio(self.gamma, self.Mw)
