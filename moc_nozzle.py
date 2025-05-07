@@ -14,7 +14,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable as mal
 import scipy.optimize as opt
-from math import asin, pi, tan, sqrt, cos, sin
+from math import asin, pi, tan, sqrt
+from numpy import cos, sin
 from fluid_mechanics.isentropic import prandtl_meyer as pmr
 from fluid_mechanics.isentropic import isentropic as isen
 
@@ -129,7 +130,7 @@ General usage (from linux terminal):
         if self.MLN:
           wall_size = self.n + 1
         else:
-          wall_size = 2*self.n + 1
+          wall_size = 2*self.n
         self.xwall = np.zeros([wall_size])
         self.ywall = np.zeros([wall_size])
         self.thetaw = np.zeros([wall_size])
@@ -346,25 +347,34 @@ General usage (from linux terminal):
     def wall_2D(self):
         '''Calculate wall points for 2D nozzle'''
 
+        if self.MLN:
+            start = 0
+            self.thetaw[0] = self.thetaMax
+            self.Nuw[0] = self.thetaMax
+        else:
+            start = self.n - 1
+            self.thetaw[1:self.n+1] = np.linspace(self.thetaMax/self.n, self.thetaMax, self.n)
+            self.Nuw[1:self.n+1] = np.linspace(self.thetaMax/self.n, self.thetaMax, self.n)
+            self.xwall[1:self.n+1] = self.x0 + self.r*sin(self.thetaw[1:self.n+1]*deg2rad)
+            self.ywall[1:self.n+1] = self.y0 + self.r - self.r*cos(self.thetaw[1:self.n+1]*deg2rad)
+
         #Wall angles
-        self.thetaw[0] = self.thetaMax
-        self.Nuw[0] = self.thetaMax
         for j in range(self.n):
-            self.thetaw[j+1] = self.theta[self.n-j-1,j]
-            self.Nuw[j+1] = self.Nu[self.n-j-1,j]
+            self.thetaw[start+j+1] = self.theta[self.n-j-1,j]
+            self.Nuw[start+j+1] = self.Nu[self.n-j-1,j]
     
         #Wall points
         for j in range(1,self.n+1):
-    	    #average wall slope between two points
-            mw=((tan((self.thetaw[j-1])*pi/180.0)+
-    	         tan((self.thetaw[j])*pi/180.0))/2.0); 
+    	      #average wall slope between two points
+            mw=((tan((self.thetaw[start+j-1])*deg2rad)+
+    	         tan((self.thetaw[start+j])*deg2rad))/2.0); 
             mp=(tan((self.theta[self.n-j,j-1]+
-                self.Mu[self.n-j,j-1])*pi/180.0))
-            yj=((mp*(-self.ywall[j-1]/mw+self.xwall[j-1]-self.x[self.n-j,j-1])+
+                self.Mu[self.n-j,j-1])*deg2rad))
+            yj=((mp*(-self.ywall[start+j-1]/mw+self.xwall[start+j-1]-self.x[self.n-j,j-1])+
                  self.y[self.n-j,j-1])/(1-mp/mw))
-            xj=(yj-self.ywall[j-1])/mw+self.xwall[j-1]
-            self.xwall[j]=xj
-            self.ywall[j]=yj
+            xj=(yj-self.ywall[start+j-1])/mw+self.xwall[start+j-1]
+            self.xwall[start+j]=xj
+            self.ywall[start+j]=yj
 
         #Organize data
         self.Mw = pmr.nu2M(self.gamma, self.Nuw)
@@ -428,12 +438,16 @@ General usage (from linux terminal):
         
         #plot first characteristics from nozzle throat
         for i in range(self.n):
-            ax.plot([self.x0,self.x[i,0]],[self.y0, self.y[i,0]],'b',linewidth=0.5)
+            ax.plot([self.x0 + self.r*sin(self.theta[i,0]*deg2rad),self.x[i,0]],[self.y0 + self.r - self.r*cos(self.theta[i,0]*deg2rad), self.y[i,0]],'b',linewidth=0.5)
         
         #plot characteristics from wall
+        if self.MLN:
+            start = 0
+        else:
+            start = self.n - 1
         for j in range(1,self.n+1):
-            ax.plot([self.x[self.n-j,j-1],self.xwall[j]],[self.y[self.n-j,j-1],
-                     self.ywall[j]],'b',linewidth=0.5)
+            ax.plot([self.x[self.n-j,j-1],self.xwall[start+j]],[self.y[self.n-j,j-1],
+                     self.ywall[start+j]],'b',linewidth=0.5)
         
         #plot inner characteristics
         for i in range(self.n-1):
@@ -463,9 +477,9 @@ General usage (from linux terminal):
         ax.set_ylim(ymin=0, ymax=1.05*np.max(self.ywall))
         ax.grid(True)
         if self.iplot >= 2:
-          if not os.path.exists(os.path.dirname(plotname)):
-              os.makedirs(os.path.dirname(plotname))
-          fig.savefig(plotname)
+            if not os.path.exists(os.path.dirname(plotname)):
+                os.makedirs(os.path.dirname(plotname))
+            fig.savefig(plotname)
 
         # Contour plots of thermodynamic variables
         # This is pretty ugly - just trying to hack the data together in a way
@@ -476,9 +490,9 @@ General usage (from linux terminal):
         yfull = np.vstack((self.y, np.zeros([1,len(self.y)])))
         Mfull = np.vstack((self.M, np.zeros([1,len(self.M)])))
         for i in range(self.n):
-          xfull[self.n-i,i] = self.xwall[i+1]
-          yfull[self.n-i,i] = self.ywall[i+1]
-          Mfull[self.n-i,i] = self.Mw[i+1]
+            xfull[self.n-i,i] = self.xwall[start+i+1]
+            yfull[self.n-i,i] = self.ywall[start+i+1]
+            Mfull[self.n-i,i] = self.Mw[start+i+1]
 
         # Add data from throat
         xfull = np.concatenate([np.zeros([self.n+1,1]),xfull], axis=1)
@@ -511,7 +525,7 @@ General usage (from linux terminal):
         cbar.set_ticks(np.linspace(Mfull.min(), Mfull.max(), 5))
         fig.tight_layout()
         if self.iplot >= 2:
-          fig.savefig(plotname.replace('.png','_mach.png'))
+            fig.savefig(plotname.replace('.png','_mach.png'))
 
         fig, ax = plt.subplots()
         cf = ax.contourf(xfull,yfull,Pratio, cmap='coolwarm', levels=200)
@@ -526,7 +540,7 @@ General usage (from linux terminal):
         cbar.set_ticks(np.linspace(Pratio.min(), Pratio.max(), 5))
         fig.tight_layout()
         if self.iplot >= 2:
-          fig.savefig(plotname.replace('.png','_pressure.png'))
+            fig.savefig(plotname.replace('.png','_pressure.png'))
 
         if self.iplot == 1 or self.iplot == 3:
             plt.show()
