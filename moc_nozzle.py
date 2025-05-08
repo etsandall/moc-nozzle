@@ -97,6 +97,7 @@ General usage (from linux terminal):
         self.fname_base = f'MOC_{self.dim.lower()}_G{self.gamma:.4f}_M{self.Me:.4f}_n{self.n:04}'
         self.r = float(r)
         if r <= 0:
+            self.r = 0.0
             self.MLN = True
         else:
             self.MLN = False
