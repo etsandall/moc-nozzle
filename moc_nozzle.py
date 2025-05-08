@@ -77,7 +77,7 @@ General usage (from linux terminal):
     -t, --test      :   run test cases
     '''
 
-    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=1, r=-1.0):
+    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=1, r=0.0, rc=0.0):
         # Check inputs are valid
         assert dim.upper() in ['2D','AXI'], f'"dim" [str] expects "2d" or "axi", got {dim} ({type(dim)})'
         assert isinstance(gamma, (float, int)), '"gamma" [float] expects a number, got {gamma} ({type(gamma)})'
@@ -86,6 +86,7 @@ General usage (from linux terminal):
         assert isinstance(outdir, str), '"outdir" [str] expects a relative or absolute path string, got {outdir} ({type(outdir)})'
         assert iplot == 0 or iplot == 1 or iplot == 2 or iplot == 3, '"iplot" [int] must be 0, 1, or 2, got {iplot} ({type(iplot)})'
         assert isinstance(r, (float, int)), '"r" [float] expects a number, got {r} ({type(r)})'
+        assert isinstance(rc, (float, int)), '"show_converge" expects a number, got {rc} ({type(rc)})'
 
         self.dim = dim.upper()
         self.gamma = float(gamma)
@@ -99,6 +100,7 @@ General usage (from linux terminal):
             self.MLN = True
         else:
             self.MLN = False
+        self.rc = rc
         
         #x,y-coordinate for start of nozzle expansion
         #solving for top contour only
@@ -152,14 +154,32 @@ General usage (from linux terminal):
         else:
             raise SyntaxError(f'Invalid MOC Solver type.  Should be axi or 2d but got {self.dim.lower()}')
 
+        if rc > 0:
+          arc = np.linspace(30.0*deg2rad, 0.0, 5)
+          x2c = self.x0
+          y2c = self.y0 + rc
+          x2 = self.x0 - rc*sin(arc)
+          y2 = self.y0 + rc - rc*cos(arc)
+          x1c = x2[0] - abs(x2[0] - self.x0)
+          y1c = y2[0] - abs(y2[0] - y2c)
+          x1 = x1c + rc*cos(arc + 60.0*deg2rad)
+          y1 = y1c + rc*sin(arc + 60.0*deg2rad)
+          x = np.concatenate([x1,x2])
+          y = np.concatenate([y1,y2])
+          self.converging_section = np.array([x,y]).transpose()
+
         # Generate output data file
         self.centerline()
         if not os.path.exists(outdir):
             os.makedirs(outdir)
         fname = os.path.join(outdir,self.fname_base + '.txt')
         with open(fname, 'w') as f:
-          np.savetxt(f, self.wall_data, delimiter='\t', header='Wall Data\nx\ty\tM\tPratio\tTratio\tDratio')
-          np.savetxt(f, self.centerline_data, delimiter='\t', header='Centerline Data\nx\ty\tM\tPratio\tTratio\tDratio')
+            if rc > 0:
+                np.savetxt(f, self.converging_section, delimiter='\t', header='Converging Section (optional)\nx\ty')
+                f.write('\n')
+            np.savetxt(f, self.wall_data, delimiter='\t', header='Wall Data\nx\ty\tM\tPratio\tTratio\tDratio')
+            f.write('\n')
+            np.savetxt(f, self.centerline_data, delimiter='\t', header='Centerline Data\nx\ty\tM\tPratio\tTratio\tDratio')
 
         # Plot
         if self.iplot > 0:
@@ -435,6 +455,9 @@ General usage (from linux terminal):
         fig, ax = plt.subplots()
 
         #plot wall geometry
+        if self.rc > 0:
+            [xconverge, yconverge] = self.converging_section.transpose()
+            ax.plot(xconverge, yconverge,'k')
         ax.plot(self.xwall,self.ywall,'k')
         
         #plot first characteristics from nozzle throat
@@ -474,8 +497,12 @@ General usage (from linux terminal):
         ax.set_ylabel(ylabel)
         ax.set_title(pltTitle)
         ax.set_aspect(1)
-        ax.set_xlim(xmin=self.xwall[0], xmax=1.05*self.xwall[-1])
-        ax.set_ylim(ymin=0, ymax=1.05*np.max(self.ywall))
+        if self.rc > 0:
+            ax.set_xlim(xmin=self.converging_section[0,0], xmax=1.05*self.xwall[-1])
+            ax.set_ylim(ymin=0, ymax=1.05*np.max([self.ywall[-1], np.max(self.converging_section[:,1])]))
+        else:
+            ax.set_xlim(xmin=self.xwall[0], xmax=1.05*self.xwall[-1])
+            ax.set_ylim(ymin=0, ymax=1.05*np.max(self.ywall))
         ax.grid(True)
         if self.iplot >= 2:
             if not os.path.exists(os.path.dirname(plotname)):
@@ -673,6 +700,11 @@ if __name__ == '__main__':
                 i += 1
             elif '--r' == arg[i].split('=')[0]:
                 R = [float(a) for a in arg[i].split('=')[-1].split(',')]
+            elif '-RC' == arg[i]:
+                RC = [float(a) for a in arg[i+1].split(',')]
+                i += 1
+            elif '--rc' == arg[i].split('=')[0]:
+                RC = [float(a) for a in arg[i].split('=')[-1].split(',')]
             else:
                 raise ValueError(f'Unknown input \"{arg[i]}\". Use -h flag for usage help.')
             i += 1
@@ -684,4 +716,5 @@ if __name__ == '__main__':
                 for m in M:
                     for n in N:
                       for r in R:
-                        MOC_Nozzle(d,g,m,n,O,I,r)
+                        for rc in RC:
+                          MOC_Nozzle(d,g,m,n,O,I,r,rc)
