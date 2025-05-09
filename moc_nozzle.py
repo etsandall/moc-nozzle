@@ -18,6 +18,8 @@ from math import asin, pi, tan, sqrt
 from numpy import cos, sin
 from fluid_mechanics.isentropic import prandtl_meyer as pmr
 from fluid_mechanics.isentropic import isentropic as isen
+from utils import colormaps
+colormaps.load_custom_cmaps()
 
 ############################
 #        MoC Solver        #
@@ -156,7 +158,7 @@ General usage (from linux terminal):
             raise SyntaxError(f'Invalid MOC Solver type.  Should be axi or 2d but got {self.dim.lower()}')
 
         if rc > 0:
-          arc = np.linspace(30.0*deg2rad, 0.0, 5)
+          arc = np.linspace(30.0*deg2rad, 0.0, 20)
           x2c = self.x0
           y2c = self.y0 + rc
           x2 = self.x0 - rc*sin(arc)
@@ -468,8 +470,10 @@ General usage (from linux terminal):
         #plot characteristics from wall
         if self.MLN:
             start = 0
+            ntype = 'Minimum'
         else:
             start = self.n - 1
+            ntype = 'Fixed'
         for j in range(1,self.n+1):
             ax.plot([self.x[self.n-j,j-1],self.xwall[start+j]],[self.y[self.n-j,j-1],
                      self.ywall[start+j]],'b',linewidth=0.5)
@@ -486,11 +490,11 @@ General usage (from linux terminal):
         outdir = self.outdir
         if '2D' in self.dim:
             ylabel = 'Height [y]'
-            pltTitle = 'Minimum Length Nozzle (2D)'
+            pltTitle = f'{ntype} Length Nozzle (2D)'
             Aratio = self.ywall[-1]*2.0/(self.ywall[0]*2.0)
         elif 'AXI' in self.dim:
             ylabel = 'Radius [r]'
-            pltTitle = 'Minimum Length Nozzle (Axisymmetric)'
+            pltTitle = f'{ntype} Length Nozzle (Axisymmetric)'
             Aratio = pi*self.ywall[-1]**2.0/(pi*self.ywall[0]**2.0)
         pltTitle += f'\nMach={self.Me} | γ={self.gamma} | {self.n} characteristics | A/A*={Aratio:.3f}'
         plotname = os.path.join(outdir,'figs',self.fname_base + '.png')
@@ -546,8 +550,9 @@ General usage (from linux terminal):
         Mfull = np.ma.masked_array(Mfull, mask=mask)
         Pratio = np.ma.masked_array(isen.M2Pratio(self.gamma, Mfull), mask=mask)
 
+        cmap = 'fluent_rainbow'
         fig, ax = plt.subplots()
-        cf = ax.contourf(xfull,yfull,Mfull, cmap='coolwarm', levels=200)
+        cf = ax.contourf(xfull,yfull,Mfull, cmap=cmap, levels=500)
         pltTitleM = pltTitle + '\nMach'
         ax.set_aspect(1)
         ax.set_title(pltTitleM)
@@ -562,7 +567,7 @@ General usage (from linux terminal):
             fig.savefig(plotname.replace('.png','_mach.png'))
 
         fig, ax = plt.subplots()
-        cf = ax.contourf(xfull,yfull,Pratio, cmap='coolwarm', levels=200)
+        cf = ax.contourf(xfull,yfull,Pratio, cmap=cmap, levels=500)
         pltTitleP = pltTitle + '\n' + r'$P/P_t$'
         ax.set_aspect(1)
         ax.set_title(pltTitleP)
