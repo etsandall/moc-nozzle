@@ -661,7 +661,8 @@ if __name__ == '__main__':
         M = [2.0]
         N = [5]
         O = 'output'
-        R = [-1.0]
+        R = [0.0]
+        RC = [0.0]
 
         arg = sys.argv[1:]
         i = 0
