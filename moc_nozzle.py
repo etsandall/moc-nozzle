@@ -167,8 +167,8 @@ General usage (from linux terminal):
           y1c = y2[0] - abs(y2[0] - y2c)
           x1 = x1c + rc*cos(arc + 60.0*deg2rad)
           y1 = y1c + rc*sin(arc + 60.0*deg2rad)
-          x = np.concatenate([x1,x2])
-          y = np.concatenate([y1,y2])
+          x = np.concatenate([x1,x2[1:]])
+          y = np.concatenate([y1,y2[1:]])
           self.converging_section = np.array([x,y]).transpose()
 
         # Generate output data file
