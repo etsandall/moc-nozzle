@@ -550,7 +550,7 @@ General usage (from linux terminal):
         Mfull = np.ma.masked_array(Mfull, mask=mask)
         Pratio = np.ma.masked_array(isen.M2Pratio(self.gamma, Mfull), mask=mask)
 
-        cmap = 'fluent_rainbow'
+        cmap = 'coolwarm'
         fig, ax = plt.subplots()
         cf = ax.contourf(xfull,yfull,Mfull, cmap=cmap, levels=500)
         pltTitleM = pltTitle + '\nMach'
