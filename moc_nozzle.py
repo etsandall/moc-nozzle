@@ -18,6 +18,8 @@ from math import asin, pi, tan, sqrt
 from numpy import cos, sin
 from fluid_mechanics.isentropic import prandtl_meyer as pmr
 from fluid_mechanics.isentropic import isentropic as isen
+from utils import colormaps
+colormaps.load_custom_cmaps()
 
 ############################
 #        MoC Solver        #
@@ -77,7 +79,7 @@ General usage (from linux terminal):
     -t, --test      :   run test cases
     '''
 
-    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=1, r=0.0):
+    def __init__(self, dim='axi', gamma=1.4, M=2.0, n=5, outdir='output', iplot=1, r=0.0, rc=0.0):
         # Check inputs are valid
         assert dim.upper() in ['2D','AXI'], f'"dim" [str] expects "2d" or "axi", got {dim} ({type(dim)})'
         assert isinstance(gamma, (float, int)), '"gamma" [float] expects a number, got {gamma} ({type(gamma)})'
@@ -86,6 +88,7 @@ General usage (from linux terminal):
         assert isinstance(outdir, str), '"outdir" [str] expects a relative or absolute path string, got {outdir} ({type(outdir)})'
         assert iplot == 0 or iplot == 1 or iplot == 2 or iplot == 3, '"iplot" [int] must be 0, 1, or 2, got {iplot} ({type(iplot)})'
         assert isinstance(r, (float, int)), '"r" [float] expects a number, got {r} ({type(r)})'
+        assert isinstance(rc, (float, int)), '"show_converge" expects a number, got {rc} ({type(rc)})'
 
         self.dim = dim.upper()
         self.gamma = float(gamma)
@@ -95,10 +98,12 @@ General usage (from linux terminal):
         self.iplot = iplot
         self.fname_base = f'MOC_{self.dim.lower()}_G{self.gamma:.4f}_M{self.Me:.4f}_n{self.n:04}'
         self.r = float(r)
-        if r > 0:
-            self.MLN = False
-        else:
+        if r <= 0:
+            self.r = 0.0
             self.MLN = True
+        else:
+            self.MLN = False
+        self.rc = rc
         
         #x,y-coordinate for start of nozzle expansion
         #solving for top contour only
@@ -152,21 +157,42 @@ General usage (from linux terminal):
         else:
             raise SyntaxError(f'Invalid MOC Solver type.  Should be axi or 2d but got {self.dim.lower()}')
 
+        if rc > 0:
+          arc = np.linspace(30.0*deg2rad, 0.0, 20)
+          x2c = self.x0
+          y2c = self.y0 + rc
+          x2 = self.x0 - rc*sin(arc)
+          y2 = self.y0 + rc - rc*cos(arc)
+          x1c = x2[0] - abs(x2[0] - self.x0)
+          y1c = y2[0] - abs(y2[0] - y2c)
+          x1 = x1c + rc*cos(arc + 60.0*deg2rad)
+          y1 = y1c + rc*sin(arc + 60.0*deg2rad)
+          x = np.concatenate([x1,x2[1:]])
+          y = np.concatenate([y1,y2[1:]])
+          self.converging_section = np.array([x,y]).transpose()
+
         # Generate output data file
         self.centerline()
         if not os.path.exists(outdir):
             os.makedirs(outdir)
         fname = os.path.join(outdir,self.fname_base + '.txt')
         with open(fname, 'w') as f:
-          np.savetxt(f, self.wall_data, delimiter='\t', header='Wall Data\nx\ty\tM\tPratio\tTratio\tDratio')
-          np.savetxt(f, self.centerline_data, delimiter='\t', header='Centerline Data\nx\ty\tM\tPratio\tTratio\tDratio')
+            if rc > 0:
+                np.savetxt(f, self.converging_section, delimiter='\t', header='Converging Section (optional)\nx\ty')
+                f.write('\n')
+            np.savetxt(f, self.wall_data, delimiter='\t', header='Wall Data\nx\ty\tM\tPratio\tTratio\tDratio')
+            f.write('\n')
+            np.savetxt(f, self.centerline_data, delimiter='\t', header='Centerline Data\nx\ty\tM\tPratio\tTratio\tDratio')
 
         # Plot
         if self.iplot > 0:
             self.plot_nozzle()
 
-    def MOC_2D(self):
+    def MOC_2D(self, r=0.0):
         '''Method of Characteristics solver for 2D nozzle'''
+
+        if r < 0:
+            r = 0.0
 
         #Flow data for characteristic lines (1st iteration)
         self.theta[:,0] = np.linspace(self.thetaMax/self.n, self.thetaMax, self.n)
@@ -438,6 +464,9 @@ General usage (from linux terminal):
         fig, ax = plt.subplots()
 
         #plot wall geometry
+        if self.rc > 0:
+            [xconverge, yconverge] = self.converging_section.transpose()
+            ax.plot(xconverge, yconverge,'k')
         ax.plot(self.xwall,self.ywall,'k')
         
         #plot first characteristics from nozzle throat
@@ -447,8 +476,10 @@ General usage (from linux terminal):
         #plot characteristics from wall
         if self.MLN:
             start = 0
+            ntype = 'Minimum'
         else:
             start = self.n - 1
+            ntype = 'Fixed'
         for j in range(1,self.n+1):
             ax.plot([self.x[self.n-j,j-1],self.xwall[start+j]],[self.y[self.n-j,j-1],
                      self.ywall[start+j]],'b',linewidth=0.5)
@@ -465,11 +496,11 @@ General usage (from linux terminal):
         outdir = self.outdir
         if '2D' in self.dim:
             ylabel = 'Height [y]'
-            pltTitle = 'Minimum Length Nozzle (2D)'
+            pltTitle = f'{ntype} Length Nozzle (2D)'
             Aratio = self.ywall[-1]*2.0/(self.ywall[0]*2.0)
         elif 'AXI' in self.dim:
             ylabel = 'Radius [r]'
-            pltTitle = 'Minimum Length Nozzle (Axisymmetric)'
+            pltTitle = f'{ntype} Length Nozzle (Axisymmetric)'
             Aratio = pi*self.ywall[-1]**2.0/(pi*self.ywall[0]**2.0)
         pltTitle += f'\nMach={self.Me} | γ={self.gamma} | {self.n} characteristics | A/A*={Aratio:.3f}'
         plotname = os.path.join(outdir,'figs',self.fname_base + '.png')
@@ -477,8 +508,12 @@ General usage (from linux terminal):
         ax.set_ylabel(ylabel)
         ax.set_title(pltTitle)
         ax.set_aspect(1)
-        ax.set_xlim(xmin=self.xwall[0], xmax=1.05*self.xwall[-1])
-        ax.set_ylim(ymin=0, ymax=1.05*np.max(self.ywall))
+        if self.rc > 0:
+            ax.set_xlim(xmin=self.converging_section[0,0], xmax=1.05*self.xwall[-1])
+            ax.set_ylim(ymin=0, ymax=1.05*np.max([self.ywall[-1], np.max(self.converging_section[:,1])]))
+        else:
+            ax.set_xlim(xmin=self.xwall[0], xmax=1.05*self.xwall[-1])
+            ax.set_ylim(ymin=0, ymax=1.05*np.max(self.ywall))
         ax.grid(True)
         if self.iplot >= 2:
             if not os.path.exists(os.path.dirname(plotname)):
@@ -521,8 +556,9 @@ General usage (from linux terminal):
         Mfull = np.ma.masked_array(Mfull, mask=mask)
         Pratio = np.ma.masked_array(isen.M2Pratio(self.gamma, Mfull), mask=mask)
 
+        cmap = 'coolwarm'
         fig, ax = plt.subplots()
-        cf = ax.contourf(xfull,yfull,Mfull, cmap='coolwarm', levels=200)
+        cf = ax.contourf(xfull,yfull,Mfull, cmap=cmap, levels=500)
         pltTitleM = pltTitle + '\nMach'
         ax.set_aspect(1)
         ax.set_title(pltTitleM)
@@ -537,7 +573,7 @@ General usage (from linux terminal):
             fig.savefig(plotname.replace('.png','_mach.png'))
 
         fig, ax = plt.subplots()
-        cf = ax.contourf(xfull,yfull,Pratio, cmap='coolwarm', levels=200)
+        cf = ax.contourf(xfull,yfull,Pratio, cmap=cmap, levels=500)
         pltTitleP = pltTitle + '\n' + r'$P/P_t$'
         ax.set_aspect(1)
         ax.set_title(pltTitleP)
@@ -636,7 +672,8 @@ if __name__ == '__main__':
         M = [2.0]
         N = [5]
         O = 'output'
-        R = [-1.0]
+        R = [0.0]
+        RC = [0.0]
 
         arg = sys.argv[1:]
         i = 0
@@ -676,6 +713,11 @@ if __name__ == '__main__':
                 i += 1
             elif '--r' == arg[i].split('=')[0]:
                 R = [float(a) for a in arg[i].split('=')[-1].split(',')]
+            elif '-RC' == arg[i]:
+                RC = [float(a) for a in arg[i+1].split(',')]
+                i += 1
+            elif '--rc' == arg[i].split('=')[0]:
+                RC = [float(a) for a in arg[i].split('=')[-1].split(',')]
             else:
                 raise ValueError(f'Unknown input \"{arg[i]}\". Use -h flag for usage help.')
             i += 1
@@ -687,4 +729,5 @@ if __name__ == '__main__':
                 for m in M:
                     for n in N:
                       for r in R:
-                        MOC_Nozzle(d,g,m,n,O,I,r)
+                        for rc in RC:
+                          MOC_Nozzle(d,g,m,n,O,I,r,rc)
