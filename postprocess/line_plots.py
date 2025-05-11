@@ -16,10 +16,8 @@ try:
   np.loadtxt(files[0])
 except:
   os.chdir('..')
-  subprocess.call('./moc_nozzle.py -D 2d -N 200 -I 2 -M 1.5,3,6'.split(' '))
-  files = ['output/MOC_2d_G1.4000_M1.5000_n0200.txt',
-           'output/MOC_2d_G1.4000_M3.0000_n0200.txt',
-           'output/MOC_2d_G1.4000_M6.0000_n0200.txt']
+  subprocess.call('./moc_nozzle.py -D 2d -N 200 -I 2 -M 1.5,3,6 -R 0'.split(' '))
+  os.chdir(pwd)
 
 for f in files:
   # wall data
@@ -72,14 +70,16 @@ for f in files:
   Da = np.mean([Dc,Dw], axis=0)
 
   # quasi-1d data
-  M = isen.Aratio2M(1.4,Aw)
+  Aw_filter = Aw[~np.isnan(Aw)]
+  x_filter = x[~np.isnan(Aw)]
+  M = isen.Aratio2M(1.4,Aw_filter)
   P = isen.M2Pratio(1.4,M)
   T = isen.M2Tratio(1.4,M)
   D = isen.M2Rratio(1.4,M)
 
   # Plot Mach
   fig, ax = plt.subplots()
-  ax.plot(x,M, label='Quasi-1D')
+  ax.plot(x_filter,M, label='Quasi-1D')
   ax.plot(x,Mw, label='MOC Wall Profile')
   ax.plot(x,Mc, label='MOC Centerline')
   ax.plot(x,Ma, label='MOC Average')
@@ -98,7 +98,7 @@ for f in files:
 
   # Plot Pressure Ratio
   fig, ax = plt.subplots()
-  ax.plot(x,P, label='Quasi-1D')
+  ax.plot(x_filter,P, label='Quasi-1D')
   ax.plot(x,Pw, label='MOC Wall Profile')
   ax.plot(x,Pc, label='MOC Centerline')
   ax.plot(x,Pa, label='MOC Average')
@@ -117,7 +117,7 @@ for f in files:
 
   # Plot Temperature Ratio
   fig, ax = plt.subplots()
-  ax.plot(x,T, label='Quasi-1D')
+  ax.plot(x_filter,T, label='Quasi-1D')
   ax.plot(x,Tw, label='MOC Wall Profile')
   ax.plot(x,Tc, label='MOC Centerline')
   ax.plot(x,Ta, label='MOC Average')
@@ -136,7 +136,7 @@ for f in files:
 
   # Plot Density Ratio
   fig, ax = plt.subplots()
-  ax.plot(x,D, label='Quasi-1D')
+  ax.plot(x_filter,D, label='Quasi-1D')
   ax.plot(x,Dw, label='MOC Wall Profile')
   ax.plot(x,Dc, label='MOC Centerline')
   ax.plot(x,Da, label='MOC Average')
